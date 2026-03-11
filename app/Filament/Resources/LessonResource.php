@@ -47,7 +47,7 @@ class LessonResource extends Resource
                             ->label('Tipe Pelajaran')
                             ->options([
                                 'video' => 'Video',
-                                'text'  => 'Artikel',
+                                'pdf'   => 'PDF Document', // Ganti Artikel ke PDF
                                 'quiz'  => 'Kuis',
                             ])
                             ->default('video')
@@ -66,23 +66,17 @@ class LessonResource extends Resource
                             ->placeholder('https://www.youtube.com/watch?v=...')
                             ->columnSpanFull(),
                         
-                        // --- LOGIC TEXT (ARTIKEL) ---
-                        // Menggunakan live(debounce) untuk hitung kata otomatis
-                        Forms\Components\RichEditor::make('content')
-                            ->label('Isi Artikel')
-                            ->visible(fn (Get $get) => $get('type') === 'text')
-                            ->required(fn (Get $get) => $get('type') === 'text')
-                            ->live(debounce: 1000) // Tunggu 1 detik setelah ketik baru hitung
-                            ->afterStateUpdated(function (Set $set, ?string $state) {
-                                // Hitung Estimasi Waktu Baca (Reading Time)
-                                // Rumus: Jumlah Kata / 200 kata per menit
-                                if ($state) {
-                                    $cleanText = strip_tags($state); // Hapus tag HTML
-                                    $wordCount = str_word_count($cleanText);
-                                    $minutes   = ceil($wordCount / 200); // Pembulatan ke atas
-                                    $set('duration_minutes', $minutes < 1 ? 1 : $minutes);
-                                }
-                            })
+                        // --- LOGIC PDF UPLOAD ---
+                        // Menggunakan kolom 'content' untuk menyimpan path file PDF
+                        Forms\Components\FileUpload::make('content')
+                            ->label('Upload File PDF')
+                            ->acceptedFileTypes(['application/pdf'])
+                            ->directory('lessons/pdf') // Folder penyimpanan di storage
+                            ->preserveFilenames()
+                            ->openable()
+                            ->downloadable()
+                            ->visible(fn (Get $get) => $get('type') === 'pdf')
+                            ->required(fn (Get $get) => $get('type') === 'pdf')
                             ->columnSpanFull(),
 
                         // --- LOGIC QUIZ ---
@@ -97,8 +91,8 @@ class LessonResource extends Resource
                                 Forms\Components\Grid::make(2)->schema([
                                     Forms\Components\TextInput::make('option_a')->label('Opsi A')->required(),
                                     Forms\Components\TextInput::make('option_b')->label('Opsi B')->required(),
-                                    Forms\Components\TextInput::make('option_c')->label('Opsi C'), // Opsional
-                                    Forms\Components\TextInput::make('option_d')->label('Opsi D'), // Opsional
+                                    Forms\Components\TextInput::make('option_c')->label('Opsi C'), 
+                                    Forms\Components\TextInput::make('option_d')->label('Opsi D'), 
                                 ]),
                                 Forms\Components\Select::make('correct_answer')
                                     ->label('Jawaban Benar')
@@ -112,17 +106,23 @@ class LessonResource extends Resource
                             ->columnSpanFull()
                             ->collapsible(),
 
-                        // --- DURASI (AUTO UNTUK TEXT, MANUAL UNTUK VIDEO) ---
-                        Forms\Components\TextInput::make('duration_minutes')
-                            ->label('Durasi (Menit)')
-                            ->numeric()
-                            ->default(0)
-                            ->helperText(fn (Get $get) => $get('type') === 'text' 
-                                ? 'Otomatis dihitung berdasarkan jumlah kata.' 
-                                : 'Masukkan durasi video secara manual.')
-                            // Readonly hanya jika text, video boleh edit manual
-                            ->readOnly(fn (Get $get) => $get('type') === 'text') 
-                            ->visible(fn (Get $get) => in_array($get('type'), ['video', 'text'])),
+                        // --- SETTING DURASI & MINIMAL BACA ---
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('duration_minutes')
+                                    ->label('Estimasi Durasi (Menit)')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->helperText('Perkiraan waktu yang dibutuhkan user untuk materi ini.'),
+
+                                Forms\Components\TextInput::make('min_viewing_seconds')
+                                    ->label('Minimal Waktu Baca (Detik)')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->required(fn (Get $get) => $get('type') === 'pdf')
+                                    ->visible(fn (Get $get) => $get('type') === 'pdf')
+                                    ->helperText('User tidak bisa klik Selesai sebelum waktu ini habis.'),
+                            ]),
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Aktifkan Pelajaran')
@@ -148,7 +148,7 @@ class LessonResource extends Resource
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'video' => 'info',
-                        'text' => 'success',
+                        'pdf' => 'danger', // Ganti warna untuk PDF
                         'quiz' => 'warning',
                         default => 'gray',
                     }),
@@ -180,30 +180,26 @@ class LessonResource extends Resource
                     ->label('Aktif'),
             ])
             ->filters([
-                // 1. Filter Tipe
                 Tables\Filters\SelectFilter::make('type')
                     ->options([
                         'video' => 'Video',
-                        'text'  => 'Artikel',
+                        'pdf'   => 'PDF Document',
                         'quiz'  => 'Kuis',
                     ])
                     ->label('Tipe Pelajaran'),
 
-                // 2. Filter Module Terkait (Relasi Langsung)
                 Tables\Filters\SelectFilter::make('modules')
                     ->relationship('modules', 'name')
                     ->label('Module Terkait')
                     ->searchable()
                     ->preload()
-                    ->multiple(), // Bisa pilih lebih dari 1 modul
+                    ->multiple(),
 
-                // 3. Filter Course Terkait (Custom Query Bertingkat)
                 Tables\Filters\SelectFilter::make('course')
                     ->label('Course Terkait')
                     ->options(fn() => \App\Models\Course::pluck('title', 'id')->toArray())
                     ->query(function (Builder $query, array $data) {
                         if (!empty($data['value'])) {
-                            // Filter lesson yang punya relasi ke modul, yang mana modulnya punya relasi ke course yg dipilih
                             $query->whereHas('modules.courses', function (Builder $query) use ($data) {
                                 $query->where('courses.id', $data['value']);
                             });

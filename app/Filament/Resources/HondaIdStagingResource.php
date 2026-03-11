@@ -51,13 +51,9 @@ class HondaIdStagingResource extends Resource
                 Tables\Columns\TextColumn::make('group')
                     ->label('Group')
                     ->searchable(),
-
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Waktu Import')
-                    ->dateTime()
-                    ->sortable(),
             ])
-            ->defaultSort('created_at', 'desc')
+            // defaultSort diubah dari created_at ke honda_id karena tabel ini tidak punya timestamps
+            ->defaultSort('honda_id', 'desc')
             ->poll('5s')
             ->actions([])
             ->bulkActions([]);

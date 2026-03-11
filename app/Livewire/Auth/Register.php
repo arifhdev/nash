@@ -39,7 +39,6 @@ class Register extends Component
     public $dealer_id = '';
     public $position_id = null; 
     
-    // Update: Hapus non_dealer dari sini
     public $userTypes = [
         'ahm' => 'Karyawan AHM',
         'main_dealer' => 'Karyawan Main Dealer',
@@ -51,7 +50,8 @@ class Register extends Component
      */
     public function updatedUserType($value)
     {
-        $this->reset(['honda_id', 'ahm_id', 'trainer_id', 'custom_id', 'main_dealer_id', 'dealer_id', 'position_id', 'role_in_md']);
+        // Reset name juga saat ganti tipe
+        $this->reset(['honda_id', 'ahm_id', 'trainer_id', 'custom_id', 'main_dealer_id', 'dealer_id', 'position_id', 'role_in_md', 'name']);
         $this->resetValidation();
     }
 
@@ -60,7 +60,8 @@ class Register extends Component
      */
     public function updatedRoleInMd($value)
     {
-        $this->reset(['trainer_id', 'custom_id', 'main_dealer_id']);
+        // Reset name saat ganti role di MD
+        $this->reset(['trainer_id', 'custom_id', 'main_dealer_id', 'name']);
         $this->resetValidation(['trainer_id', 'custom_id']);
     }
 
@@ -68,7 +69,7 @@ class Register extends Component
     public function updatedHondaId($value)
     {
         $this->resetValidation('honda_id');
-        $this->reset(['main_dealer_id', 'dealer_id', 'position_id']);
+        $this->reset(['main_dealer_id', 'dealer_id', 'position_id', 'name']);
 
         if (empty($value)) return;
 
@@ -89,16 +90,18 @@ class Register extends Component
             return;
         }
 
+        // Auto-fill Data
         $this->main_dealer_id = $whitelist->main_dealer_id;
         $this->dealer_id = $whitelist->dealer_id;
         $this->position_id = $whitelist->position_id;
+        $this->name = $whitelist->name; // Nama otomatis muncul
     }
 
     // --- VALIDASI REAL-TIME TRAINER ID (JALUR MAIN DEALER) ---
     public function updatedTrainerId($value)
     {
         $this->resetValidation('trainer_id');
-        $this->main_dealer_id = '';
+        $this->reset(['main_dealer_id', 'name']);
 
         if (empty($value)) return;
 
@@ -119,13 +122,17 @@ class Register extends Component
             return;
         }
 
+        // Auto-fill Data
         $this->main_dealer_id = $whitelist->main_dealer_id;
+        $this->name = $whitelist->name; // Nama otomatis muncul
     }
 
     // --- VALIDASI REAL-TIME AHM ID ---
     public function updatedAhmId($value)
     {
         $this->resetValidation('ahm_id');
+        $this->reset('name');
+
         if (empty($value)) return;
 
         $whitelist = AhmIdVerification::where('ahm_id', trim($value))->first();
@@ -136,6 +143,9 @@ class Register extends Component
             $this->addError('ahm_id', 'AHM ID tidak aktif.');
         } elseif ($whitelist->has_account) {
             $this->addError('ahm_id', 'AHM ID sudah terdaftar.');
+        } else {
+            // Auto-fill Data
+            $this->name = $whitelist->name; // Nama otomatis muncul
         }
     }
 
@@ -143,6 +153,8 @@ class Register extends Component
     public function updatedCustomId($value)
     {
         $this->resetValidation('custom_id');
+        $this->reset(['main_dealer_id', 'name']);
+
         if (empty($value)) return;
 
         $whitelist = CustomIdVerification::where('custom_id', trim($value))->first();
@@ -162,10 +174,11 @@ class Register extends Component
             return;
         }
 
-        // Jika Main Dealer memilih jalur MD ID, set juga Main Dealer ID-nya
+        // Auto-fill Data
         if ($this->user_type === 'main_dealer') {
             $this->main_dealer_id = $whitelist->main_dealer_id;
         }
+        $this->name = $whitelist->name; // Nama otomatis muncul
     }
 
     public function register()
@@ -176,7 +189,7 @@ class Register extends Component
             'phone_number' => ['required', 'string', 'max:20'], 
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'user_type' => ['required', Rule::in(array_keys($this->userTypes))],
-            'agreed_pdp' => ['accepted'], // Validasi wajib centang persetujuan
+            'agreed_pdp' => ['accepted'], 
         ];
 
         // Jalur Dealer
@@ -232,13 +245,11 @@ class Register extends Component
 
         Auth::login($user);
         
-        // Sesuaikan route tujuan setelah register
         return redirect()->route('dashboard'); 
     }
 
     public function render()
     {
-        // Ambil data PDP yang statusnya aktif
         $pdpContent = Pdp::where('is_active', true)->latest()->first();
 
         return view('livewire.auth.register', [

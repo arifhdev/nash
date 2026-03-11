@@ -161,7 +161,10 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5 animate-fade-in-up">
                     <div>
                         <label class="block font-bold text-sm text-gray-700 mb-1">Nama Lengkap</label>
-                        <input wire:model="name" type="text" class="w-full pl-4 py-3 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#ED1C24] focus:ring-1 focus:ring-[#ED1C24]" placeholder="Nama Sesuai KTP" required>
+                        {{-- Nama Lengkap Read-Only & Uppercase --}}
+                        <input wire:model="name" type="text" 
+                               class="w-full pl-4 py-3 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-700 uppercase cursor-not-allowed focus:outline-none" 
+                               placeholder="Nama Sesuai KTP" readonly>
                         @error('name') <span class="text-red-500 text-xs font-bold mt-1 block">{{ $message }}</span> @enderror
                     </div>
                     <div>
@@ -249,12 +252,12 @@
                                     Persetujuan Pemrosesan Data Pribadi (PDP)
                                 </h3>
                                 <div class="mt-2 text-sm text-gray-600 max-h-60 overflow-y-auto pr-2 space-y-3 prose">
-    @if($pdpContent)
-        {!! $pdpContent->content !!}
-    @else
-        <p>Konten Persetujuan belum tersedia.</p>
-    @endif
-</div>
+                                    @if($pdpContent)
+                                        {!! $pdpContent->content !!}
+                                    @else
+                                        <p>Konten Persetujuan belum tersedia.</p>
+                                    @endif
+                                </div>
                             </div>
                         </div>
                     </div>
