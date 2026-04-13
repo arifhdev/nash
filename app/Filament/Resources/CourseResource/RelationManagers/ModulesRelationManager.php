@@ -25,7 +25,12 @@ class ModulesRelationManager extends RelationManager
                     ->live(onBlur: true)
                     ->afterStateUpdated(fn (Forms\Set $set, ?string $state) => $set('slug', Str::slug($state))),
                 
-                Forms\Components\TextInput::make('slug')->required()->readOnly(),
+                // PERBAIKAN: Tambahkan unique validation dan hapus readOnly() agar user bisa mengedit manual jika duplicate
+                Forms\Components\TextInput::make('slug')
+                    ->required()
+                    ->maxLength(255)
+                    ->unique(ignoreRecord: true),
+                    
                 Forms\Components\Toggle::make('is_active')->default(true),
 
                 // FITUR BARU: Kelola (Attach/Detach) Lesson langsung dari pop-up Edit Modul

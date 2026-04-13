@@ -4,11 +4,13 @@ namespace App\Livewire\Frontend\Course;
 
 use App\Models\Category;
 use App\Models\Course;
+use App\Enums\UserType;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Illuminate\Database\Eloquent\Builder;
 
 #[Layout('layouts.app')]
 #[Title('Semua Kursus - Akademi Satu Hati')]
@@ -24,13 +26,13 @@ class CourseList extends Component
 
     public function setCategory($id)
     {
-        $this->category = $id === $this->category ? null : $id;
-        $this->resetPage(); // Reset ke halaman 1 saat ganti filter
+        $this->category = ($id == $this->category) ? null : $id;
+        $this->resetPage(); 
     }
 
     public function updatedSearch()
     {
-        $this->resetPage(); // Reset ke halaman 1 saat searching
+        $this->resetPage(); 
     }
 
     public function render()
@@ -38,18 +40,49 @@ class CourseList extends Component
         $categories = Category::where('is_active', true)->get();
 
         $courses = Course::query()
-            ->with(['category'])
+            ->with(['category', 'prerequisites']) 
             ->withCount('modules')
             ->where('is_active', true)
-            ->when($this->search, function ($query) {
-                $query->where('title', 'like', '%' . $this->search . '%')
-                      ->orWhere('description', 'like', '%' . $this->search . '%');
+            
+            // PROTEKSI AKSES: Menggabungkan Filter Jabatan (Single) & Wilayah Main Dealer
+            ->when(auth()->check(), function (Builder $query) {
+                $user = auth()->user();
+
+                // 1. FILTER JABATAN (Single Position)
+                if ($user->position_id) {
+                    $query->whereHas('positions', function (Builder $q) use ($user) {
+                        $q->where('positions.id', $user->position_id);
+                    });
+                } else {
+                    // Jika user tidak punya jabatan sama sekali, sembunyikan semua course
+                    $query->whereRaw('1 = 0'); 
+                }
+
+                // 2. FILTER WILAYAH MAIN DEALER
+                // Hanya berlaku untuk Main Dealer & Dealer. Karyawan AHM akan dilewatkan.
+                $userTypeValue = $user->user_type instanceof UserType ? $user->user_type->value : $user->user_type;
+                
+                if (in_array($userTypeValue, ['main_dealer', 'dealer']) && $user->main_dealer_id) {
+                    $query->whereHas('mainDealers', function (Builder $q) use ($user) {
+                        $q->where('main_dealers.id', $user->main_dealer_id);
+                    });
+                }
             })
-            ->when($this->category, function ($query) {
+
+            // 3. FILTER SEARCH
+            ->when($this->search, function (Builder $query) {
+                $query->where(function(Builder $q) {
+                    $q->where('title', 'like', '%' . $this->search . '%')
+                      ->orWhere('description', 'like', '%' . $this->search . '%');
+                });
+            })
+
+            // 4. FILTER KATEGORI
+            ->when($this->category, function (Builder $query) {
                 $query->where('category_id', $this->category);
             })
             ->latest()
-            ->paginate(9); // 9 Item per halaman
+            ->paginate(9);
 
         return view('livewire.frontend.course.course-list', [
             'categories' => $categories,

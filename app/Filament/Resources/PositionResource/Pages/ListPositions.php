@@ -13,7 +13,9 @@ class ListPositions extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Tambah Jabatan')
+                ->icon('heroicon-o-plus-circle'),
         ];
     }
 }

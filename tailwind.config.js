@@ -12,6 +12,6 @@ export default {
         extend: {},
     },
     plugins: [
-        require('@tailwindcss/typography'), // Plugin artikel bapak ada di sini
+        require('@tailwindcss/typography'), 
     ],
 };

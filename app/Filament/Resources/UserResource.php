@@ -75,14 +75,15 @@ class UserResource extends Resource
                             ->required()
                             ->live()
                             ->afterStateUpdated(function (Set $set) {
-                                // Reset semua field terkait jika tipe diganti
                                 $set('main_dealer_id', null);
                                 $set('dealer_id', null);
                                 $set('honda_id', null);
                                 $set('ahm_id', null);
                                 $set('custom_id', null);
                                 $set('trainer_id', null);
-                                $set('role_in_md', null); // Reset pilihan radio sub-level
+                                $set('role_in_md', null);
+                                $set('divisi', null); 
+                                $set('position_id', null); // Diubah jadi position_id (Single)
                             }),
 
                         // --- SUB-PILIHAN KHUSUS MAIN DEALER (Virtual Field) ---
@@ -94,26 +95,24 @@ class UserResource extends Resource
                             ])
                             ->inline()
                             ->live()
-                            ->dehydrated(false) // PENTING: Jangan disimpan ke database
+                            ->dehydrated(false)
                             ->visible(function (Get $get) {
                                 $userType = $get('user_type');
                                 $val = $userType instanceof UserType ? $userType->value : $userType;
                                 return $val === UserType::MAIN_DEALER->value;
                             })
                             ->formatStateUsing(function (?Model $record) {
-                                // Auto-select saat halaman Edit dibuka
                                 if ($record?->trainer_id) return 'trainer';
                                 if ($record?->custom_id) return 'non_trainer';
                                 return null;
                             })
                             ->afterStateUpdated(function (Set $set) {
-                                // Reset ID kalau pindah dari Trainer ke Bukan Trainer
                                 $set('trainer_id', null);
                                 $set('custom_id', null);
                                 $set('main_dealer_id', null);
                             }),
 
-                        // --- 1. JALUR HONDA ID (Hanya untuk Karyawan Dealer) ---
+                        // --- 1. JALUR HONDA ID ---
                         Forms\Components\TextInput::make('honda_id')
                             ->label('Honda ID')
                             ->unique(ignoreRecord: true)
@@ -126,12 +125,14 @@ class UserResource extends Resource
                             ->live(debounce: 500)
                             ->afterStateUpdated(function (Set $set, ?string $state) {
                                 if (filled($state)) {
-                                    $whitelist = HondaIdVerification::where('honda_id', $state)->first();
+                                    // Panggil relasi position tunggal
+                                    $whitelist = HondaIdVerification::with('position')->where('honda_id', $state)->first();
                                     if ($whitelist) {
                                         $set('main_dealer_id', $whitelist->main_dealer_id);
                                         $set('dealer_id', $whitelist->dealer_id);
                                         if ($whitelist->position_id) {
-                                            $set('positions', [$whitelist->position_id]);
+                                            $set('divisi', $whitelist->position->divisi ?? null);
+                                            $set('position_id', $whitelist->position_id); // Auto-select single position
                                         }
                                     }
                                 }
@@ -147,7 +148,7 @@ class UserResource extends Resource
                                 },
                             ]),
 
-                        // --- 2. JALUR AHM ID (Hanya untuk AHM) ---
+                        // --- 2. JALUR AHM ID ---
                         Forms\Components\TextInput::make('ahm_id')
                             ->label('AHM ID')
                             ->unique(ignoreRecord: true)
@@ -169,7 +170,7 @@ class UserResource extends Resource
                                 },
                             ]),
 
-                        // --- 3A. JALUR TRAINER ID (Hanya Muncul jika Pilih "Sebagai Trainer") ---
+                        // --- 3A. JALUR TRAINER ID ---
                         Forms\Components\TextInput::make('trainer_id')
                             ->label('Trainer ID')
                             ->unique(ignoreRecord: true)
@@ -204,7 +205,7 @@ class UserResource extends Resource
                                 },
                             ]),
 
-                        // --- 3B. JALUR MD ID (Hanya Muncul jika Pilih "Bukan Trainer") ---
+                        // --- 3B. JALUR MD ID ---
                         Forms\Components\TextInput::make('custom_id')
                             ->label('MD ID')
                             ->unique(ignoreRecord: true)
@@ -244,20 +245,49 @@ class UserResource extends Resource
                             ->tel()
                             ->maxLength(20),
 
-                        // --- JABATAN (POSITIONS) ---
-                        Forms\Components\Select::make('positions')
-                            ->label('Jabatan')
-                            ->relationship('positions', 'name')
-                            ->searchable()
-                            ->preload()
-                            ->placeholder('Pilih Jabatan (Boleh Kosong)')
-                            ->hidden(function (Get $get) {
-                                $val = $get('user_type');
-                                if ($val instanceof UserType) $val = $val->value;
-                                return $val === UserType::MAIN_DEALER->value; 
+                        // --- PEMISAHAN FORM: DIVISI & JABATAN (SINGLE) ---
+                        Forms\Components\Select::make('divisi')
+                            ->label('Divisi')
+                            ->options(function (Get $get) {
+                                $userType = $get('user_type');
+                                if (!$userType) return [];
+                                $val = $userType instanceof UserType ? $userType->value : $userType;
+                                
+                                return Position::query()
+                                    ->where('user_type', $val)
+                                    ->whereNotNull('divisi')
+                                    ->distinct()
+                                    ->pluck('divisi', 'divisi');
+                            })
+                            ->live()
+                            ->dehydrated(false) // Field virtual
+                            ->placeholder('Pilih Divisi Terlebih Dahulu')
+                            ->afterStateUpdated(fn (Set $set) => $set('position_id', null)) // Reset position_id
+                            ->afterStateHydrated(function (Set $set, ?Model $record) {
+                                // Ambil divisi dari single relasi position
+                                if ($record && $record->position) {
+                                    $set('divisi', $record->position->divisi);
+                                }
                             }),
 
-                        // --- MAIN DEALER ---
+                        Forms\Components\Select::make('position_id')
+                            ->label('Jabatan')
+                            ->relationship('position', 'name', modifyQueryUsing: function (Builder $query, Get $get) {
+                                $divisi = $get('divisi');
+                                $userType = $get('user_type');
+                                $val = $userType instanceof UserType ? $userType->value : $userType;
+
+                                if ($divisi) {
+                                    return $query->where('divisi', $divisi)->where('user_type', $val);
+                                }
+                                return $query->where('id', 0); // Kosong jika divisi belum diisi
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->placeholder('Pilih Jabatan (Pilih Divisi Dulu)')
+                            ->disabled(fn (Get $get) => empty($get('divisi'))),
+
+                        // --- PENEMPATAN LOKASI ---
                         Forms\Components\Select::make('main_dealer_id')
                             ->label('Main Dealer')
                             ->relationship('mainDealer', 'name', modifyQueryUsing: function (Builder $query) {
@@ -329,9 +359,19 @@ class UserResource extends Resource
                     ->searchable()
                     ->sortable(),
                 
-                Tables\Columns\TextColumn::make('positions.name')
+                // Diubah jadi tunggal (position.name)
+                Tables\Columns\TextColumn::make('position.name')
                     ->label('Jabatan')
                     ->badge()
+                    ->color('gray')
+                    ->searchable(),
+
+                // Diubah jadi tunggal (position.divisi)
+                Tables\Columns\TextColumn::make('position.divisi')
+                    ->label('Divisi')
+                    ->badge()
+                    ->color('info')
+                    ->placeholder('N/A')
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('roles.name')
@@ -345,18 +385,20 @@ class UserResource extends Resource
                     }),
 
                 Tables\Columns\TextColumn::make('user_type')
-                    ->label('Tipe Karyawan')
+                    ->label('Tipe')
                     ->badge(),
 
                 Tables\Columns\TextColumn::make('mainDealer.name')
                     ->label('Main Dealer')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 Tables\Columns\TextColumn::make('dealer.name')
                     ->label('Dealer')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
@@ -368,11 +410,22 @@ class UserResource extends Resource
                     ->options(UserType::class)
                     ->label('Filter Tipe Karyawan'),
                 
-                Tables\Filters\SelectFilter::make('positions')
-                    ->relationship('positions', 'name')
+                // Filter diubah jadi position_id (Tunggal)
+                Tables\Filters\SelectFilter::make('position_id')
+                    ->relationship('position', 'name')
                     ->searchable()
                     ->preload()
                     ->label('Filter Jabatan'),
+
+                Tables\Filters\SelectFilter::make('divisi')
+                    ->options(fn() => Position::whereNotNull('divisi')->distinct()->pluck('divisi', 'divisi')->toArray())
+                    ->query(function (Builder $query, array $data) {
+                        if (!empty($data['value'])) {
+                            // WhereHas diubah menunjuk relasi 'position'
+                            $query->whereHas('position', fn($q) => $q->where('divisi', $data['value']));
+                        }
+                    })
+                    ->label('Filter Divisi'),
 
                 Tables\Filters\SelectFilter::make('main_dealer_id')
                     ->relationship('mainDealer', 'name', modifyQueryUsing: function (Builder $query) {
@@ -403,6 +456,7 @@ class UserResource extends Resource
     {
         return [
             UserResource\RelationManagers\CoursesRelationManager::class,
+            UserResource\RelationManagers\PointHistoriesRelationManager::class,
         ];
     }
     

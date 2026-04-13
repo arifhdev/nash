@@ -6,25 +6,21 @@ use App\Filament\Resources\PositionResource\Pages;
 use App\Models\Position;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get; 
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\Rules\Unique; 
 
 class PositionResource extends Resource
 {
     protected static ?string $model = Position::class;
 
-    // Icon Koper (Cocok untuk Jabatan)
     protected static ?string $navigationIcon = 'heroicon-o-briefcase';
-
-    // Grouping di Sidebar
     protected static ?string $navigationGroup = 'Master Data';
-    
-    // Urutan menu (Opsional, angka kecil makin atas)
     protected static ?int $navigationSort = 12;
 
-    // Label di Sidebar & Judul Halaman
     protected static ?string $navigationLabel = 'Jabatan';
     protected static ?string $modelLabel = 'Jabatan';
     protected static ?string $pluralModelLabel = 'Data Jabatan';
@@ -35,23 +31,55 @@ class PositionResource extends Resource
             ->schema([
                 Forms\Components\Section::make('Informasi Jabatan')
                     ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->label('Nama Jabatan')
-                            ->required()
-                            ->maxLength(255)
-                            ->placeholder('Contoh: Sales Counter, Kepala Bengkel')
-                            ->columnSpanFull(),
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\Select::make('user_type')
+                                    ->label('Peruntukan Jabatan')
+                                    ->options([
+                                        'ahm' => 'Karyawan AHM',
+                                        'main_dealer' => 'Karyawan Main Dealer',
+                                        'dealer' => 'Karyawan Dealer',
+                                    ])
+                                    ->required()
+                                    ->native(false)
+                                    ->live(), // Tambahkan live agar perubahan tipe langsung terbaca oleh validasi divisi
+
+                                Forms\Components\TextInput::make('name')
+                                    ->label('Nama Jabatan')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->live(onBlur: true) 
+                                    ->placeholder('Contoh: Manager, Supervisor, Kepala Bengkel'),
+                            ]),
 
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\TextInput::make('group')
-                                    ->label('Group / Departemen')
-                                    ->placeholder('Contoh: Sales, Service, Finance')
-                                    ->maxLength(255),
+                                Forms\Components\Select::make('divisi')
+                                    ->label('Divisi')
+                                    ->options([
+                                        'Marketing Planning and Analysis' => 'Marketing Planning and Analysis',
+                                        'H1 - Sales' => 'H1 - Sales',
+                                        'H2 - TSD' => 'H2 - TSD',
+                                        'H3 - Parts' => 'H3 - Parts',
+                                        'HC3' => 'HC3',
+                                        'Logistic' => 'Logistic',
+                                    ])
+                                    ->searchable()
+                                    ->native(false)
+                                    ->required()
+                                    // UPDATE LOGIKA: Cek keunikan berdasarkan Nama + Tipe User + Divisi
+                                    ->unique(ignoreRecord: true, modifyRuleUsing: function (Unique $rule, Get $get) {
+                                        return $rule->where('name', $get('name'))
+                                                    ->where('user_type', $get('user_type'));
+                                    })
+                                    ->validationMessages([
+                                        'unique' => 'Jabatan ini sudah terdaftar untuk tipe user dan divisi tersebut.',
+                                    ])
+                                    ->placeholder('Pilih Divisi'),
 
                                 Forms\Components\TextInput::make('level')
                                     ->label('Level')
-                                    ->placeholder('Contoh: Staff, Supervisor, Manager')
+                                    ->placeholder('Contoh: 1, 2, 3 atau Staff, Manager')
                                     ->maxLength(255),
                             ]),
                     ])
@@ -68,17 +96,25 @@ class PositionResource extends Resource
                     ->sortable()
                     ->weight('bold'),
 
-                Tables\Columns\TextColumn::make('group')
-                    ->label('Group')
-                    ->badge() 
-                    // [PERBAIKAN] Tambah ?string agar tidak error jika nilainya null di database
-                    ->color(fn (?string $state): string => match ($state) {
-                        'Sales' => 'success',
-                        'Service' => 'warning',
-                        'Finance', 'Keuangan' => 'info',
-                        'HRD', 'GA' => 'danger',
+                Tables\Columns\TextColumn::make('user_type')
+                    ->label('Peruntukan')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'ahm' => 'danger',
+                        'main_dealer' => 'warning',
+                        'dealer' => 'info',
                         default => 'gray',
                     })
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'ahm' => 'AHM',
+                        'main_dealer' => 'Main Dealer',
+                        'dealer' => 'Dealer',
+                        default => $state,
+                    })
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('divisi')
+                    ->label('Divisi')
                     ->searchable()
                     ->sortable(),
 
@@ -93,25 +129,24 @@ class PositionResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                // [PERBAIKAN] Filter berdasarkan Group dengan mengabaikan nilai null/kosong
-                Tables\Filters\SelectFilter::make('group')
-                    ->options(fn() => Position::query()
-                        ->whereNotNull('group')
-                        ->where('group', '!=', '')
-                        ->pluck('group', 'group')
-                        ->toArray()
-                    )
-                    ->label('Filter Group'),
-                
-                // [PERBAIKAN] Filter berdasarkan Level dengan mengabaikan nilai null/kosong
-                Tables\Filters\SelectFilter::make('level')
-                    ->options(fn() => Position::query()
-                        ->whereNotNull('level')
-                        ->where('level', '!=', '')
-                        ->pluck('level', 'level')
-                        ->toArray()
-                    )
-                    ->label('Filter Level'),
+                Tables\Filters\SelectFilter::make('user_type')
+                    ->options([
+                        'ahm' => 'AHM',
+                        'main_dealer' => 'Main Dealer',
+                        'dealer' => 'Dealer',
+                    ])
+                    ->label('Filter Peruntukan'),
+
+                Tables\Filters\SelectFilter::make('divisi')
+                    ->options([
+                        'Marketing Planning and Analysis' => 'Marketing Planning and Analysis',
+                        'H1 - Sales' => 'H1 - Sales',
+                        'H2 - TSD' => 'H2 - TSD',
+                        'H3 - Parts' => 'H3 - Parts',
+                        'HC3' => 'HC3',
+                        'Logistic' => 'Logistic',
+                    ])
+                    ->label('Filter Divisi'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -126,12 +161,9 @@ class PositionResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
-    // Logic: Hanya Super Admin yang boleh melihat menu ini
     public static function canViewAny(): bool
     {
         return auth()->check() && auth()->user()->hasRole('super_admin');

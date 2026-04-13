@@ -1,4 +1,25 @@
 <x-app-layout>
+    @php
+        // Mengambil data user yang sedang login
+        $user = auth()->user();
+        
+        // Mengambil total Poin (Mata Uang) dan XP (Leaderboard)
+        $totalPoints = $user->total_points ?? 0;
+        $totalXP = $user->total_xp ?? 0;
+        
+        // Menghitung peringkat global (Dengan Tie-Breaker + Exclude Admin)
+        $globalRank = \App\Models\User::where('user_type', '!=', 'ahm') // Kecualikan admin pusat
+            ->where(function($query) use ($totalXP, $user) {
+                // Syarat 1: Hitung orang yang XP-nya mutlak lebih besar
+                $query->where('total_xp', '>', $totalXP)
+                      // Syarat 2 (Tie-Breaker): Jika XP-nya sama, hitung yang ID-nya lebih kecil (Daftar duluan)
+                      ->orWhere(function($q) use ($totalXP, $user) {
+                          $q->where('total_xp', '=', $totalXP)
+                            ->where('id', '<', $user->id);
+                      });
+            })->count() + 1;
+    @endphp
+
     <div class="bg-[#F3F4F6] min-h-screen">
         <div class="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col lg:flex-row gap-8">
@@ -12,20 +33,61 @@
                     <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 min-h-[700px]">
                         
                         {{-- Content Header --}}
-                        <div class="flex flex-col md:flex-row md:items-end justify-between mb-8 pb-6 border-b border-gray-100">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 pb-6 border-b border-gray-100 gap-6">
                             <div>
                                 <h1 class="text-2xl font-extrabold text-gray-900 uppercase tracking-tight">Learning Progress</h1>
                                 <p class="mt-2 text-sm text-gray-500 font-medium">Pantau aktivitas dan capaian kompetensi Anda.</p>
                             </div>
                             
-                            {{-- XP Badge (Dinamis) --}}
-                            <div class="mt-4 md:mt-0 flex items-center gap-3 bg-red-50 px-5 py-3 rounded-xl border border-red-100">
-                                <div class="p-2 bg-[#ED1C24] rounded-lg text-white">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            {{-- Wrapper Kanan: Tombol Check-In, Poin Badge & XP Badge --}}
+                            <div class="mt-4 md:mt-0 flex flex-col items-end gap-2" 
+                                 x-data="{ xp: {{ $totalXP }}, points: {{ $totalPoints }} }" 
+                                 @points-updated.window="xp += $event.detail.xp || $event.detail.amount || 0; points += $event.detail.points || 0">
+                                
+                                {{-- LABEL COMING SOON UNTUK POIN & XP --}}
+                                <div class="px-3 py-1 bg-gray-100 text-gray-500 text-[10px] font-black uppercase tracking-widest rounded-full border border-gray-200">
+                                    Coming Soon
                                 </div>
-                                <div class="text-right">
-                                    <span class="text-[10px] font-bold text-red-600 uppercase tracking-widest block">Total Poin</span>
-                                    <span class="text-xl font-black text-gray-900">{{ number_format($totalXP ?? 0) }} <span class="text-xs text-gray-500 font-bold">XP</span></span>
+
+                                <div class="flex flex-row items-center gap-4">
+                                    {{-- KOMPONEN TOMBOL CHECK-IN DI-HOLD SEMENTARA --}}
+                                    {{-- 
+                                    <div class="w-auto min-w-[220px]">
+                                        <livewire:daily-check-in />
+                                    </div>
+                                    --}}
+
+                                    <div class="flex items-center gap-3">
+                                        {{-- POIN BADGE (Mata Uang) - Tampilan Abu-abu (Hold) --}}
+                                        <div class="flex items-center gap-3 bg-gray-50 px-4 py-3 rounded-xl border border-gray-200 shadow-sm whitespace-nowrap grayscale opacity-70">
+                                            <div class="p-2 bg-gray-400 rounded-lg text-white">
+                                                {{-- Ikon Koin/Uang --}}
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                            </div>
+                                            <div class="text-right flex-1">
+                                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">Saldo Poin</span>
+                                                <span class="text-xl font-black text-gray-400">
+                                                    <span x-text="points.toLocaleString('id-ID')">{{ number_format($totalPoints) }}</span> 
+                                                    <span class="text-xs text-gray-400 font-bold">Pts</span>
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {{-- XP BADGE (Leaderboard) - Tampilan Abu-abu (Hold) --}}
+                                        <div class="flex items-center gap-3 bg-gray-50 px-4 py-3 rounded-xl border border-gray-200 shadow-sm whitespace-nowrap grayscale opacity-70">
+                                            <div class="p-2 bg-gray-400 rounded-lg text-white">
+                                                {{-- Ikon Lightning / Petir untuk XP --}}
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                            </div>
+                                            <div class="text-right flex-1">
+                                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">Total XP</span>
+                                                <span class="text-xl font-black text-gray-400">
+                                                    <span x-text="xp.toLocaleString('id-ID')">{{ number_format($totalXP) }}</span> 
+                                                    <span class="text-xs text-gray-400 font-bold">XP</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -54,15 +116,20 @@
                                 <p class="text-3xl font-black text-gray-900">{{ $completedCount ?? 0 }}</p>
                             </a>
 
-                            {{-- Card 3: Peringkat --}}
-                            <div class="bg-white rounded-xl p-5 border border-gray-200 hover:border-orange-200 hover:shadow-md transition-all duration-300 group">
+                            {{-- Card 3: Peringkat Global (DI-HOLD / DISABLED) --}}
+                            <div class="block bg-gray-50 rounded-xl p-5 border border-gray-200 grayscale opacity-70 cursor-not-allowed">
                                 <div class="flex items-start justify-between mb-2">
-                                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Peringkat Global</p>
-                                    <div class="p-1.5 bg-gray-50 rounded-lg text-gray-400 group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors">
+                                    <div class="flex flex-col gap-1">
+                                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Peringkat Global</p>
+                                        <span class="inline-block px-2 py-0.5 bg-gray-200 text-gray-500 text-[9px] font-bold uppercase tracking-widest rounded w-max">Coming Soon</span>
+                                    </div>
+                                    <div class="p-1.5 bg-gray-200 rounded-lg text-gray-400">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
                                     </div>
                                 </div>
-                                <p class="text-3xl font-black text-gray-900">-</p>
+                                <p class="text-3xl font-black text-gray-400 mt-2">
+                                    <span class="text-gray-300 text-xl">-</span>
+                                </p>
                             </div>
                         </div>
 

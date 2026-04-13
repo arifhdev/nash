@@ -31,26 +31,32 @@
             </div>
 
             <div class="mt-6 pt-6 border-t border-gray-100 w-full text-center space-y-4">
-                <div>
-                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Main Dealer</p>
-                    <p class="text-xs font-bold text-gray-700 line-clamp-2">
-                        @if(auth()->user()->mainDealer)
-                            {{ auth()->user()->mainDealer->name }} - {{ auth()->user()->mainDealer->code }}
-                        @else
-                            -
-                        @endif
-                    </p>
-                </div>
-
-                @if(auth()->user()->dealer)
+                
+                {{-- Info Main Dealer (Dilewati jika AHM) --}}
+                @if(auth()->user()->user_type !== 'ahm')
                     <div>
-                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Dealer</p>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Main Dealer</p>
                         <p class="text-xs font-bold text-gray-700 line-clamp-2">
-                            {{ auth()->user()->dealer->name }} - {{ auth()->user()->dealer->code }}
+                            @if(auth()->user()->mainDealer)
+                                {{ auth()->user()->mainDealer->name }} - {{ auth()->user()->mainDealer->code }}
+                            @else
+                                -
+                            @endif
                         </p>
                     </div>
+
+                    {{-- Info Dealer --}}
+                    @if(auth()->user()->dealer)
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Dealer</p>
+                            <p class="text-xs font-bold text-gray-700 line-clamp-2">
+                                {{ auth()->user()->dealer->name }} - {{ auth()->user()->dealer->code }}
+                            </p>
+                        </div>
+                    @endif
                 @endif
 
+                {{-- Jabatan Single Position --}}
                 <div>
                     <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Jabatan</p>
                     <div class="inline-flex items-center justify-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100 max-w-full">
@@ -58,8 +64,11 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                         </svg>
                         <p class="text-xs font-bold text-gray-700 text-center leading-tight">
-                            @if(auth()->user()->positions->count() > 0)
-                                {{ auth()->user()->positions->map(fn($pos) => $pos->name . ($pos->group ? ' (' . $pos->group . ')' : ''))->join(', ') }}
+                            @if(auth()->user()->position)
+                                {{ auth()->user()->position->name }}
+                                @if(auth()->user()->position->divisi)
+                                    ({{ auth()->user()->position->divisi }})
+                                @endif
                             @else
                                 -
                             @endif

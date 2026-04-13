@@ -8,10 +8,12 @@ use Illuminate\Support\Str;
 
 class Lesson extends Model
 {
+    // Menggunakan guarded kosong berarti semua kolom otomatis diizinkan untuk mass-assignment
     protected $guarded = [];
 
     protected $casts = [
         'quiz_data' => 'array',
+        'quiz_display_count' => 'integer', // Pastikan kolom baru ini di-cast sebagai integer
         'is_free' => 'boolean',
         'is_active' => 'boolean',
     ];

@@ -53,7 +53,7 @@ class="flex h-screen bg-white font-sans overflow-hidden">
         <div class="flex-1 overflow-y-auto custom-scrollbar">
             
             @php
-                $previousLessonCompleted = true; 
+                $hasUncompletedLesson = false; 
             @endphp
 
             @foreach($course->modules as $module)
@@ -69,13 +69,15 @@ class="flex h-screen bg-white font-sans overflow-hidden">
                                 $isActive = $currentLesson && $currentLesson->id == $lesson->id;
                                 $isCompleted = in_array($lesson->id, $lessonsCompletedIds);
                                 
-                                $isLocked = !$previousLessonCompleted;
-                                if ($isCompleted) {
-                                    $previousLessonCompleted = true;
-                                } else {
-                                    $previousLessonCompleted = false;
+                                $isLocked = $hasUncompletedLesson && $course->require_sequential;
+
+                                if ($isActive) {
+                                    $isLocked = false;
                                 }
-                                if($isActive) $isLocked = false;
+
+                                if (!$isCompleted) {
+                                    $hasUncompletedLesson = true;
+                                }
                             @endphp
 
                             @if($isLocked)
@@ -130,7 +132,7 @@ class="flex h-screen bg-white font-sans overflow-hidden">
         </div>
         
         <div class="p-4 border-t border-gray-200 bg-white">
-            <a href="{{ url('/my-learning') }}" class="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
+            <a href="{{ route('my-learning') }}" wire:navigate class="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                 Kembali ke My Learning
             </a>
@@ -152,6 +154,32 @@ class="flex h-screen bg-white font-sans overflow-hidden">
         <div class="flex-1 overflow-y-auto bg-white">
             <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
                 
+                {{-- FLASH MESSAGE / ALERT (Untuk Notifikasi Gagal Kuis dll) --}}
+                @if(session()->has('error'))
+                    <div class="mb-8 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 shadow-sm animate-pulse">
+                        <svg class="w-6 h-6 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                            <h3 class="text-sm font-bold text-red-800 uppercase tracking-wider mb-1">Perhatian</h3>
+                            <div class="text-sm font-medium text-red-700">
+                                {{ session('error') }}
+                            </div>
+                        </div>
+                    </div>
+                @endif
+                
+                @if(session()->has('success'))
+                    <div class="mb-8 p-4 rounded-xl bg-green-50 border border-green-200 flex items-start gap-3 shadow-sm">
+                        <svg class="w-6 h-6 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div class="text-sm font-medium text-green-800">
+                            {{ session('success') }}
+                        </div>
+                    </div>
+                @endif
+
                 @if($currentLesson)
                     
                     {{-- CEK STATUS UNTUK TOMBOL SELESAI --}}
@@ -493,11 +521,10 @@ class="flex h-screen bg-white font-sans overflow-hidden">
                     {{-- ========================================================= --}}
                     {{-- BLOK RENDER KUIS INTERAKTIF JIKA TIPE NYA ADALAH "QUIZ" --}}
                     {{-- ========================================================= --}}
-                    @if($currentLesson->type === 'quiz' && !empty($currentLesson->quiz_data))
+                    @if($currentLesson->type === 'quiz')
                         @php
-                            $quizData = is_array($currentLesson->quiz_data) 
-                                        ? $currentLesson->quiz_data 
-                                        : json_decode($currentLesson->quiz_data, true);
+                            // Ambil data quiz yang SUDAH DIACAK dari Livewire Component
+                            $quizData = $preparedQuizzes ?? [];
                             
                             $initialAttempts = DB::table('lesson_user')
                                 ->where('user_id', Auth::id())
@@ -517,9 +544,10 @@ class="flex h-screen bg-white font-sans overflow-hidden">
                                 lockTimer: 0,
                                 timerInterval: null,
 
-                                selectAnswer(qIndex, answer) {
+                                selectAnswer(qIndex, answerText) {
                                     if (this.showResults || this.lockTimer > 0) return;
-                                    this.selectedAnswers[qIndex] = answer;
+                                    // Menyimpan nilai TEKS dari opsi yang dipilih
+                                    this.selectedAnswers[qIndex] = answerText;
                                 },
                                 
                                 submitQuiz() {
@@ -530,7 +558,8 @@ class="flex h-screen bg-white font-sans overflow-hidden">
 
                                     this.score = 0;
                                     this.questions.forEach((q, index) => {
-                                        if (this.selectedAnswers[index] === q.correct_answer) {
+                                        // Mencocokkan jawaban user (teks) dengan teks jawaban yang benar
+                                        if (this.selectedAnswers[index] === q.correct_answer_text) {
                                             this.score++;
                                         }
                                     });
@@ -601,15 +630,17 @@ class="flex h-screen bg-white font-sans overflow-hidden">
                                             <p class="font-semibold text-gray-800 text-lg mb-4" x-text="(index + 1) + '. ' + q.question"></p>
                                             
                                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <template x-for="opt in ['a', 'b', 'c', 'd']">
+                                                {{-- Looping array pilihan jawaban yang sudah diacak --}}
+                                                <template x-for="(optText, optIndex) in q.options" :key="optIndex">
                                                     <label class="flex items-center p-4 border rounded-xl cursor-pointer transition-all duration-200"
-                                                           :class="selectedAnswers[index] === opt ? 'border-[#ED1C24] bg-red-50/50 ring-1 ring-[#ED1C24]' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'">
-                                                        <input type="radio" :name="'q_' + index" :value="opt" @click="selectAnswer(index, opt)" class="hidden">
+                                                           :class="selectedAnswers[index] === optText ? 'border-[#ED1C24] bg-red-50/50 ring-1 ring-[#ED1C24]' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'">
+                                                        <input type="radio" :name="'q_' + index" :value="optText" @click="selectAnswer(index, optText)" class="hidden">
                                                         <div class="w-5 h-5 rounded-full border-2 flex-shrink-0 mr-3 flex items-center justify-center transition-colors"
-                                                              :class="selectedAnswers[index] === opt ? 'border-[#ED1C24]' : 'border-gray-300'">
-                                                            <div class="w-2.5 h-2.5 rounded-full bg-[#ED1C24]" x-show="selectedAnswers[index] === opt"></div>
+                                                              :class="selectedAnswers[index] === optText ? 'border-[#ED1C24]' : 'border-gray-300'">
+                                                            <div class="w-2.5 h-2.5 rounded-full bg-[#ED1C24]" x-show="selectedAnswers[index] === optText"></div>
                                                         </div>
-                                                        <span class="text-gray-700 font-medium" x-text="opt.toUpperCase() + '. ' + q['option_' + opt]"></span>
+                                                        {{-- Generate label A, B, C, D dinamis --}}
+                                                        <span class="text-gray-700 font-medium" x-text="['A', 'B', 'C', 'D'][optIndex] + '. ' + optText"></span>
                                                     </label>
                                                 </template>
                                             </div>
@@ -703,4 +734,3 @@ class="flex h-screen bg-white font-sans overflow-hidden">
         </div>
     </div>
 </div>
-

@@ -42,17 +42,30 @@ class ModuleResource extends Resource
                             ->live(onBlur: true) // Generate slug otomatis
                             ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
 
-                        // Slug (URL)
+                        // Slug (URL) - SUDAH DIPERBAIKI MENCEGAH DUPLIKAT ERROR 500
                         Forms\Components\TextInput::make('slug')
                             ->required()
                             ->maxLength(255)
-                            ->readOnly(),
+                            ->unique(ignoreRecord: true), // readOnly dihapus, diganti ini
 
-                        // Deskripsi
-                        Forms\Components\Textarea::make('description')
+                        // Deskripsi - DIUBAH JADI RICH EDITOR
+                        Forms\Components\RichEditor::make('description')
                             ->label('Deskripsi Singkat')
-                            ->rows(3)
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->toolbarButtons([
+                                'blockquote',
+                                'bold',
+                                'bulletList',
+                                'h2',
+                                'h3',
+                                'italic',
+                                'link',
+                                'orderedList',
+                                'redo',
+                                'strike',
+                                'underline',
+                                'undo',
+                            ]), // Optional: Anda bisa atur tombol toolbar apa saja yang mau dimunculkan
 
                         // Status Aktif
                         Forms\Components\Toggle::make('is_active')
@@ -92,6 +105,13 @@ class ModuleResource extends Resource
 
                 Tables\Columns\ToggleColumn::make('is_active')
                     ->label('Aktif'),
+
+                // FITUR BARU: Menampilkan Waktu Dibuat
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('Dibuat Pada')
+                    ->dateTime('d M Y, H:i') // Format: 08 Apr 2026, 16:59
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false),
             ])
             ->filters([
                 //
@@ -104,7 +124,8 @@ class ModuleResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->defaultSort('created_at', 'desc'); // Otomatis mengurutkan dari yang terbaru
     }
 
     public static function getRelations(): array

@@ -18,6 +18,13 @@ use App\Models\Certificate;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Livewire\Frontend\Booklet\BookletList;
 use App\Livewire\Frontend\Booklet\BookletDetail;
+use App\Livewire\Leaderboard;
+
+use App\Livewire\Frontend\Klhn\KlhnEventList;
+use App\Livewire\Frontend\Klhn\KlhnEventDetail;
+
+use App\Livewire\Frontend\Broadcast\LiveBroadcastList;
+use App\Livewire\Frontend\Broadcast\LiveBroadcastDetail;
 
 /*
 |--------------------------------------------------------------------------
@@ -127,5 +134,16 @@ Route::middleware(['auth'])->group(function () {
     // 10. Booklet
     Route::get('/booklets', BookletList::class)->name('booklets.index');
     Route::get('/booklet/{slug}', BookletDetail::class)->name('booklet.show');
+
+    // 11. Leaderboard
+    Route::get('/leaderboard', Leaderboard::class)->name('leaderboard');
+
+    // 12. KLHN
+    Route::get('/klhn', KlhnEventList::class)->name('klhn.index');
+    Route::get('/klhn/{id}', KlhnEventDetail::class)->name('klhn.detail');
+
+    // 13. Live Broadcast
+    Route::get('/broadcasts', LiveBroadcastList::class)->name('broadcast.index');
+    Route::get('/broadcasts/{id}', LiveBroadcastDetail::class)->name('broadcast.detail');
 
 });

@@ -3,30 +3,54 @@
 namespace App\Livewire\Frontend;
 
 use App\Models\Course;
-use App\Models\UserActivity; // PENTING: Import model activity
+use App\Models\UserActivity;
+use App\Enums\UserType; // Jangan lupa import Enum ini
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Database\Eloquent\Builder;
 
 #[Layout('layouts.app')]
 class CourseDetail extends Component
 {
     public $course;
     public $slug;
-    public $isEnrolled = false; // Properti untuk status pendaftaran
+    public $isEnrolled = false;
 
     public function mount($slug)
     {
         $this->slug = $slug;
 
-        // 1. Ambil data course dengan relasi modul & lesson
-        $this->course = Course::with(['category', 'modules.lessons'])
+        // 1. Ambil data course dengan PROTEKSI BERLAPIS (Main Dealer + Jabatan Tunggal)
+        $this->course = Course::with(['category', 'modules.lessons', 'prerequisites'])
             ->where('slug', $this->slug)
             ->where('is_active', true)
-            ->firstOrFail();
+            ->when(Auth::check(), function (Builder $query) {
+                $user = Auth::user();
 
-        // 2. Cek apakah User Login & Sudah Enroll?
+                // PROTEKSI 1: FILTER JABATAN (Single Position)
+                if ($user->position_id) {
+                    $query->whereHas('positions', function (Builder $q) use ($user) {
+                        $q->where('positions.id', $user->position_id);
+                    });
+                } else {
+                    // Jika user tidak punya jabatan, blokir akses (1 = 0)
+                    $query->whereRaw('1 = 0'); 
+                }
+
+                // PROTEKSI 2: FILTER WILAYAH MAIN DEALER
+                // Hanya berlaku untuk Main Dealer & Dealer. Karyawan AHM akan dilewatkan.
+                $userTypeValue = $user->user_type instanceof UserType ? $user->user_type->value : $user->user_type;
+                
+                if (in_array($userTypeValue, ['main_dealer', 'dealer']) && $user->main_dealer_id) {
+                    $query->whereHas('mainDealers', function (Builder $q) use ($user) {
+                        $q->where('main_dealers.id', $user->main_dealer_id);
+                    });
+                }
+            })
+            ->firstOrFail(); // Lempar 404 jika tidak sesuai kriteria akses
+
+        // 2. Cek status pendaftaran
         if (Auth::check()) {
             $this->isEnrolled = Auth::user()->courses()
                 ->where('course_id', $this->course->id)
@@ -36,51 +60,47 @@ class CourseDetail extends Component
 
     public function startLearning()
     {
-        // 1. Wajib Login
         if (!Auth::check()) {
             return redirect()->route('login');
         }
 
-        // 2. Jika BELUM terdaftar, masukkan ke database (Enroll)
+        // PROTEKSI TAMBAHAN: Cegah Bypass Enroll jika course masih Terkunci (Prasyarat belum selesai)
+        if ($this->course->isLockedForUser(Auth::user())) {
+            session()->flash('error', 'Anda tidak dapat mendaftar. Silakan selesaikan Course Prasyarat terlebih dahulu.');
+            return redirect()->back();
+        }
+        
         if (!$this->isEnrolled) {
             Auth::user()->courses()->attach($this->course->id, [
                 'progress_percent' => 0,
                 'status' => 'active',
-                'last_accessed_at' => now()->timezone('Asia/Jakarta'), // Catat akses pertama
+                'last_accessed_at' => now()->timezone('Asia/Jakarta'),
                 'created_at' => now()->timezone('Asia/Jakarta'),
                 'updated_at' => now()->timezone('Asia/Jakarta'),
             ]);
             
-            // --- LOG AKTIVITAS: ENROLL ---
             UserActivity::create([
                 'user_id' => Auth::id(),
                 'activity_type' => 'Enroll Kursus: ' . $this->course->title,
                 'ip_address' => request()->ip(),
                 'user_agent' => request()->userAgent(),
             ]);
-            // -----------------------------
 
             $this->isEnrolled = true;
             session()->flash('success', 'Berhasil mendaftar kursus!');
         } else {
-            // Jika SUDAH terdaftar (Lanjut Belajar), update pivot last_accessed_at
             Auth::user()->courses()->updateExistingPivot($this->course->id, [
                 'last_accessed_at' => now()->timezone('Asia/Jakarta'),
             ]);
 
-            // --- LOG AKTIVITAS: LANJUT BELAJAR ---
             UserActivity::create([
                 'user_id' => Auth::id(),
                 'activity_type' => 'Melanjutkan Kursus: ' . $this->course->title,
                 'ip_address' => request()->ip(),
                 'user_agent' => request()->userAgent(),
             ]);
-            // -------------------------------------
         }
 
-        // 3. Redirect ke Dashboard Pembelajaran (My Learning)
-        // Jika Anda sudah punya rute khusus langsung ke player, bisa diganti ke:
-        // return redirect()->route('course.player', ['courseSlug' => $this->course->slug]);
         return redirect()->route('my-learning');
     }
 

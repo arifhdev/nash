@@ -9,6 +9,16 @@
         </div>
     @endif
 
+    {{-- Notifikasi Error (Tambahan baru untuk warning prasyarat) --}}
+    @if (session()->has('error'))
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-6">
+            <div class="rounded-lg bg-red-50 p-4 border border-red-200 flex items-center gap-3 animate-fade-in-down">
+                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span class="text-sm font-bold text-red-700">{{ session('error') }}</span>
+            </div>
+        </div>
+    @endif
+
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
@@ -17,11 +27,28 @@
                 
                 {{-- Header Card --}}
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-                    <span class="px-3 py-1 bg-red-100 text-[#ED1C24] text-xs font-bold rounded-full uppercase tracking-wider">
-                        {{ $course->category->name ?? 'Uncategorized' }}
-                    </span>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="px-3 py-1 bg-red-100 text-[#ED1C24] text-xs font-bold rounded-full uppercase tracking-wider">
+                            {{ $course->category->name ?? 'Uncategorized' }}
+                        </span>
+
+                        {{-- Badge Wajib Diikuti --}}
+                        @if(auth()->check() && auth()->user()->position_id && ($course->mandatoryPositions ?? collect([]))->contains('id', auth()->user()->position_id))
+                            <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full uppercase tracking-wider flex items-center gap-1 border border-amber-200 shadow-sm">
+                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                                Wajib Diikuti
+                            </span>
+                        @endif
+                    </div>
+
                     <h1 class="text-3xl font-extrabold text-gray-900 mt-4 leading-tight">{{ $course->title }}</h1>
-                    <p class="text-gray-600 mt-4 leading-relaxed text-sm md:text-base">{{ $course->description }}</p>
+                    
+                    {{-- Deskripsi Kursus --}}
+                    <div class="prose max-w-none text-gray-600 mt-4 leading-relaxed text-sm md:text-base [&_a]:text-blue-600 [&_a]:underline [&_a]:font-semibold hover:[&_a]:text-blue-800 transition-colors"
+                         x-data 
+                         x-init="$el.querySelectorAll('a').forEach(a => { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); })">
+                        {!! $course->description !!}
+                    </div>
                 </div>
 
                 {{-- Modules List --}}
@@ -48,24 +75,39 @@
                                 </button>
 
                                 <div x-show="open" x-collapse>
-                                    <div class="px-6 pb-6 space-y-3">
-                                        @foreach($module->lessons as $lesson)
-                                            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100 hover:border-red-100 hover:bg-red-50/30 transition group cursor-default">
-                                                <div class="flex items-center gap-3">
-                                                    @if($lesson->type == 'video')
-                                                        <div class="p-1.5 bg-white rounded-md text-[#ED1C24] shadow-sm">
-                                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm10 4l-4-3v6l4-3z"/></svg>
-                                                        </div>
-                                                    @else
-                                                        <div class="p-1.5 bg-white rounded-md text-blue-500 shadow-sm">
-                                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414L14.586 2H9z"/></svg>
-                                                        </div>
-                                                    @endif
-                                                    <span class="text-sm font-medium text-gray-700 group-hover:text-gray-900">{{ $lesson->title }}</span>
-                                                </div>
-                                                <span class="text-xs text-gray-400 font-mono bg-white px-2 py-1 rounded border border-gray-100">{{ $lesson->duration_minutes }} Min</span>
+                                    <div class="px-6 pb-6">
+                                        
+                                        @if($module->description)
+                                            <div class="prose prose-sm max-w-none text-gray-600 mb-5 pb-4 border-b border-gray-100 [&_a]:text-blue-600 [&_a]:underline [&_a]:font-semibold hover:[&_a]:text-blue-800 transition-colors"
+                                                 x-data 
+                                                 x-init="$el.querySelectorAll('a').forEach(a => { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); })">
+                                                {!! $module->description !!}
                                             </div>
-                                        @endforeach
+                                        @endif
+
+                                        <div class="space-y-3">
+                                            @foreach($module->lessons as $lesson)
+                                                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100 hover:border-red-100 hover:bg-red-50/30 transition group cursor-default">
+                                                    <div class="flex items-center gap-3">
+                                                        @if($lesson->type == 'video')
+                                                            <div class="p-1.5 bg-white rounded-md text-[#ED1C24] shadow-sm">
+                                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm10 4l-4-3v6l4-3z"/></svg>
+                                                            </div>
+                                                        @elseif($lesson->type == 'quiz')
+                                                            <div class="p-1.5 bg-white rounded-md text-amber-500 shadow-sm">
+                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                                                            </div>
+                                                        @else
+                                                            <div class="p-1.5 bg-white rounded-md text-blue-500 shadow-sm">
+                                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414L14.586 2H9z"/></svg>
+                                                            </div>
+                                                        @endif
+                                                        <span class="text-sm font-medium text-gray-700 group-hover:text-gray-900">{{ $lesson->title }}</span>
+                                                    </div>
+                                                    <span class="text-xs text-gray-400 font-mono bg-white px-2 py-1 rounded border border-gray-100">{{ $lesson->duration_minutes }} Min</span>
+                                                </div>
+                                            @endforeach
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -106,8 +148,17 @@
                         
                         {{-- ACTION BUTTON SECTION --}}
                         <div class="mt-2">
+
+                            {{-- Pesan jika wajib --}}
+                            @if(!$isEnrolled && auth()->check() && auth()->user()->position_id && ($course->mandatoryPositions ?? collect([]))->contains('id', auth()->user()->position_id))
+                                <p class="text-[11px] text-amber-600 font-bold mb-2 flex items-center gap-1 uppercase tracking-tight">
+                                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                                    Kursus ini wajib untuk jabatan Anda
+                                </p>
+                            @endif
+
                             @if($isEnrolled)
-                                {{-- JIKA SUDAH ENROLL: Tombol Lanjutkan (Link Langsung ke Player) --}}
+                                {{-- JIKA SUDAH ENROLL: Tombol Lanjutkan Belajar langsung ke Course Player --}}
                                 <a href="{{ route('course.player', $course->slug) }}" 
                                    wire:navigate
                                    class="w-full py-4 bg-gray-900 rounded-xl font-black text-white uppercase tracking-widest hover:bg-black transition shadow-lg flex items-center justify-center gap-2 group cursor-pointer text-center">
@@ -115,7 +166,7 @@
                                     <svg class="w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                                 </a>
                             @else
-                                {{-- JIKA BELUM ENROLL: Tombol Daftar (Mencatat Enroll Dulu) --}}
+                                {{-- JIKA BELUM ENROLL: Tombol Daftar --}}
                                 <button wire:click="startLearning" 
                                         wire:loading.attr="disabled"
                                         class="w-full py-4 bg-[#ED1C24] rounded-xl font-black text-white uppercase tracking-widest hover:bg-red-700 transition shadow-lg shadow-red-200 flex items-center justify-center gap-2 group">

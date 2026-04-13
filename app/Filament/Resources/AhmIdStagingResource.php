@@ -20,7 +20,6 @@ class AhmIdStagingResource extends Resource
 
     public static function canCreate(): bool { return false; }
     public static function canEdit(Model $record): bool { return false; }
-    public static function canDelete(Model $record): bool { return false; }
 
     public static function table(Table $table): Table
     {
@@ -30,22 +29,42 @@ class AhmIdStagingResource extends Resource
                     ->label('AHM ID')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->weight('bold'),
                     
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nama Lengkap')
                     ->searchable()
                     ->sortable(),
 
+                // Menampilkan data teks asli dari Excel
+                Tables\Columns\TextColumn::make('divisi')
+                    ->label('Divisi (Excel)')
+                    ->badge()
+                    ->color('info')
+                    ->placeholder('Kosong'),
+
+                Tables\Columns\TextColumn::make('jabatan')
+                    ->label('Jabatan (Excel)')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('Kosong'),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Waktu Import')
-                    ->dateTime()
+                    ->dateTime('d M Y, H:i:s')
                     ->sortable(),
             ])
             ->defaultSort('created_at', 'desc')
-            ->poll('5s')
-            ->actions([])
-            ->bulkActions([]);
+            ->poll('3s')
+            ->actions([
+                Tables\Actions\DeleteAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
     }
 
     public static function getPages(): array

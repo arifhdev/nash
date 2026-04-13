@@ -50,17 +50,49 @@
              wire:loading.class="opacity-50 pointer-events-none">
             
             @forelse($courses as $course)
-                <div class="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col h-full">
+                @php
+                    // Cek status kunci untuk user yang sedang login
+                    $isLocked = auth()->check() ? $course->isLockedForUser(auth()->user()) : false;
+
+                    // PERBAIKAN: Cek apakah Wajib Diikuti (Sesuai dengan Single Jabatan User)
+                    $isMandatory = auth()->check() && auth()->user()->position_id 
+                                   ? ($course->mandatoryPositions ?? collect([]))->contains('id', auth()->user()->position_id) 
+                                   : false;
+                @endphp
+
+                <div class="group bg-white rounded-2xl border border-gray-100 shadow-sm transition-all duration-300 overflow-hidden flex flex-col h-full relative {{ $isLocked ? 'opacity-90' : 'hover:shadow-xl' }}">
                     
+                    {{-- Badge Wajib Diikuti Mengambang di Kanan Atas --}}
+                    @if($isMandatory)
+                        <div class="absolute top-3 right-3 z-10 px-3 py-1 bg-amber-100/90 backdrop-blur-sm text-amber-700 text-[10px] font-black rounded-full uppercase tracking-widest flex items-center gap-1 shadow-sm border border-amber-200">
+                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                            Wajib
+                        </div>
+                    @endif
+
                     {{-- Image Wrapper --}}
                     <div class="relative h-48 overflow-hidden bg-gray-100">
-                        <a href="{{ route('course.detail', $course->slug) }}" wire:navigate class="block w-full h-full">
-                            <img src="{{ Storage::url($course->image) }}" 
-                                 alt="{{ $course->title }}" 
-                                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-                        </a>
+                        @if($isLocked)
+                            <div class="block w-full h-full relative">
+                                <img src="{{ Storage::url($course->image) }}" 
+                                     alt="{{ $course->title }}" 
+                                     class="w-full h-full object-cover grayscale">
+                                {{-- Overlay Terkunci --}}
+                                <div class="absolute inset-0 bg-gray-900/40 flex flex-col items-center justify-center text-white backdrop-blur-[2px]">
+                                    <svg class="w-10 h-10 mb-2 drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                                    <span class="text-sm font-bold tracking-widest uppercase drop-shadow-md">Terkunci</span>
+                                </div>
+                            </div>
+                        @else
+                            <a href="{{ route('course.detail', $course->slug) }}" wire:navigate class="block w-full h-full">
+                                <img src="{{ Storage::url($course->image) }}" 
+                                     alt="{{ $course->title }}" 
+                                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                            </a>
+                        @endif
+
                         @if($course->category)
-                            <div class="absolute top-3 left-3 px-3 py-1 bg-white/90 backdrop-blur-sm rounded-full text-xs font-bold text-[#ED1C24] shadow-sm">
+                            <div class="absolute top-3 left-3 px-3 py-1 bg-white/90 backdrop-blur-sm rounded-full text-xs font-bold text-[#ED1C24] shadow-sm z-10">
                                 {{ $course->category->name }}
                             </div>
                         @endif
@@ -81,21 +113,56 @@
                         </div>
 
                         {{-- Title --}}
-                        <h3 class="text-lg font-bold text-gray-900 mb-2 leading-snug group-hover:text-[#ED1C24] transition-colors">
-                            <a href="{{ route('course.detail', $course->slug) }}" wire:navigate>{{ $course->title }}</a>
+                        <h3 class="text-lg font-bold text-gray-900 mb-2 leading-snug transition-colors {{ $isLocked ? '' : 'group-hover:text-[#ED1C24]' }}">
+                            @if($isLocked)
+                                <span class="cursor-not-allowed">{{ $course->title }}</span>
+                            @else
+                                <a href="{{ route('course.detail', $course->slug) }}" wire:navigate>{{ $course->title }}</a>
+                            @endif
                         </h3>
                         
-                        {{-- Description --}}
-                        <p class="text-gray-500 text-sm leading-relaxed mb-4 line-clamp-3">
-                            {{ $course->description }}
-                        </p>
+                        {{-- Description / Warning Prasyarat --}}
+                        @if($isLocked)
+                            <div class="mt-2 mb-4 p-3 bg-red-50 rounded-xl border border-red-100 flex-grow">
+                                <p class="text-xs font-bold text-red-700 mb-2 flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    Prasyarat Wajib:
+                                </p>
+                                <ul class="list-disc list-inside text-red-600 space-y-1 text-xs">
+                                    @foreach($course->prerequisites as $req)
+                                        @if(auth()->check() && !auth()->user()->hasCompletedCourse($req->id))
+                                            <li class="line-clamp-1" title="{{ $req->title }}">
+                                                <a href="{{ route('course.detail', $req->slug) }}" wire:navigate class="hover:underline hover:text-red-800 transition-colors">
+                                                    {{ $req->title }}
+                                                </a>
+                                            </li>
+                                        @endif
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @else
+                            {{-- FIX: RENDER HTML, STYLING LINK, & OPEN NEW WINDOW --}}
+                            <div class="text-gray-600 text-sm leading-relaxed mb-4 line-clamp-3 prose prose-sm max-w-none 
+                                [&_a]:text-blue-600 [&_a]:underline [&_a]:font-semibold hover:[&_a]:text-blue-800 transition-colors"
+                                x-data 
+                                x-init="$el.querySelectorAll('a').forEach(a => { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); })">
+                                {!! $course->description !!}
+                            </div>
+                        @endif
 
                         {{-- Footer Button --}}
                         <div class="mt-auto pt-4 border-t border-gray-100">
-                            <a href="{{ route('course.detail', $course->slug) }}" wire:navigate class="inline-flex items-center text-sm font-semibold text-[#ED1C24] hover:text-red-700 transition">
-                                Pelajari Selengkapnya
-                                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
-                            </a>
+                            @if($isLocked)
+                                <span class="inline-flex items-center text-sm font-semibold text-gray-400 cursor-not-allowed">
+                                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                                    Selesaikan Prasyarat
+                                </span>
+                            @else
+                                <a href="{{ route('course.detail', $course->slug) }}" wire:navigate class="inline-flex items-center text-sm font-semibold text-[#ED1C24] hover:text-red-700 transition">
+                                    Pelajari Selengkapnya
+                                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
+                                </a>
+                            @endif
                         </div>
                     </div>
                 </div>

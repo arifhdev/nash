@@ -17,6 +17,7 @@
     </style>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <meta name="facebook-domain-verification" content="mbqps27tg1aj7ormkoi2lwc3px4sry" />
 </head>
 
 <body class="bg-gray-50 font-sans antialiased text-gray-900 flex flex-col min-h-screen">

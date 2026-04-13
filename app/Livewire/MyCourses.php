@@ -7,8 +7,9 @@ use Livewire\WithPagination;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
+use Illuminate\Database\Eloquent\Builder;
 
-#[Layout('layouts.app')] // Sesuaikan dengan nama layout Anda (misal: components.layouts.app atau layouts.app)
+#[Layout('layouts.app')] // Sesuaikan dengan nama layout Anda
 #[Title('Kursus Saya')]
 class MyCourses extends Component
 {
@@ -28,9 +29,18 @@ class MyCourses extends Component
 
         // Query mengambil course milik user (Relasi Many-to-Many)
         $courses = $user->courses()
-            ->with(['category', 'modules']) // Eager load biar ringan
+            // --- UPDATE DI SINI: Tambahkan 'prerequisites' ---
+            ->with(['category', 'modules', 'prerequisites']) 
+            // PROTEKSI: Pastikan course ini MASIH diizinkan untuk Main Dealer user
+            ->when($user->main_dealer_id, function (Builder $query) use ($user) {
+                $query->whereHas('mainDealers', function (Builder $q) use ($user) {
+                    $q->where('main_dealers.id', $user->main_dealer_id);
+                });
+            })
+            // PASTIKAN juga course-nya masih berstatus aktif (opsional tapi disarankan)
+            ->where('courses.is_active', true) 
             ->where(function($query) {
-                // Logic search judul course
+                // Logic search judul course (Sudah aman karena dibungkus kurung)
                 $query->where('title', 'like', '%' . $this->search . '%')
                       ->orWhere('description', 'like', '%' . $this->search . '%');
             })

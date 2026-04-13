@@ -38,10 +38,11 @@ class LessonResource extends Resource
                             ->live(onBlur: true)
                             ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
                         
+                        // SUDAH DIPERBAIKI MENCEGAH DUPLIKAT ERROR 500
                         Forms\Components\TextInput::make('slug')
                             ->required()
                             ->maxLength(255)
-                            ->readOnly(),
+                            ->unique(ignoreRecord: true), 
 
                         Forms\Components\Select::make('type')
                             ->label('Tipe Pelajaran')
@@ -67,11 +68,10 @@ class LessonResource extends Resource
                             ->columnSpanFull(),
                         
                         // --- LOGIC PDF UPLOAD ---
-                        // Menggunakan kolom 'content' untuk menyimpan path file PDF
                         Forms\Components\FileUpload::make('content')
                             ->label('Upload File PDF')
                             ->acceptedFileTypes(['application/pdf'])
-                            ->directory('lessons/pdf') // Folder penyimpanan di storage
+                            ->directory('lessons/pdf') 
                             ->preserveFilenames()
                             ->openable()
                             ->downloadable()
@@ -79,10 +79,29 @@ class LessonResource extends Resource
                             ->required(fn (Get $get) => $get('type') === 'pdf')
                             ->columnSpanFull(),
 
+                        // --- LOGIC QUIZ SETTINGS (BARU) ---
+                        Forms\Components\TextInput::make('quiz_display_count')
+                            ->label('Jumlah Pertanyaan Ditampilkan')
+                            ->numeric()
+                            ->minValue(1)
+                            ->visible(fn (Get $get) => $get('type') === 'quiz')
+                            ->required(fn (Get $get) => $get('type') === 'quiz')
+                            ->helperText('Misal: Anda buat 5 soal, tapi isi 3 disini. Maka user hanya akan mendapat 3 soal acak.')
+                            ->rules([
+                                fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                    $totalQuiz = count($get('quiz_data') ?? []);
+                                    // Validasi: jumlah tampil tidak boleh lebih dari jumlah soal yang dibuat
+                                    if ($totalQuiz > 0 && $value > $totalQuiz) {
+                                        $fail("Jumlah yang ditampilkan ({$value}) tidak boleh melebihi total pertanyaan yang dibuat ({$totalQuiz}).");
+                                    }
+                                },
+                            ]),
+
                         // --- LOGIC QUIZ ---
                         Forms\Components\Repeater::make('quiz_data')
                             ->label('Pertanyaan Kuis')
                             ->visible(fn (Get $get) => $get('type') === 'quiz')
+                            ->live() // <-- Tambahkan live() agar hitungan kuis up-to-date untuk validasi
                             ->schema([
                                 Forms\Components\Textarea::make('question')
                                     ->label('Pertanyaan')
@@ -148,7 +167,7 @@ class LessonResource extends Resource
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'video' => 'info',
-                        'pdf' => 'danger', // Ganti warna untuk PDF
+                        'pdf' => 'danger', 
                         'quiz' => 'warning',
                         default => 'gray',
                     }),
@@ -174,10 +193,17 @@ class LessonResource extends Resource
                 Tables\Columns\TextColumn::make('duration_minutes')
                     ->label('Durasi')
                     ->suffix(' menit')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true), 
 
                 Tables\Columns\ToggleColumn::make('is_active')
                     ->label('Aktif'),
+
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('Dibuat Pada')
+                    ->dateTime('d M Y, H:i') 
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('type')
@@ -216,7 +242,8 @@ class LessonResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->defaultSort('created_at', 'desc'); 
     }
 
     public static function getRelations(): array

@@ -14,17 +14,18 @@ class Position extends Model
 
     protected $fillable = [
         'name',
-        'group',
+        'user_type', 
+        'divisi',    
         'level',
     ];
 
     /**
-     * Relasi: Satu Jabatan bisa dimiliki oleh banyak User.
-     * Contoh penggunaan: $position->users;
+     * PERBAIKAN: Relasi One-to-Many.
+     * Satu Jabatan bisa dimiliki oleh banyak User.
      */
     public function users()
     {
-        return $this->belongsToMany(User::class, 'position_user');
+        return $this->hasMany(User::class, 'position_id');
     }
 
     public function courses()

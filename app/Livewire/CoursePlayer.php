@@ -5,29 +5,62 @@ namespace App\Livewire;
 use App\Models\Course;
 use App\Models\Lesson;
 use App\Models\UserActivity;
-use App\Models\Certificate; // TAMBAHAN: Model Certificate
+use App\Models\Certificate;
+use App\Enums\UserType;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str; // TAMBAHAN: Untuk Str::slug generate nomor reg
+use Illuminate\Support\Str;
 use Livewire\Component;
+use Illuminate\Database\Eloquent\Builder;
 
 class CoursePlayer extends Component
 {
     public $course;
     public $currentLesson;
     public $lessonsCompletedIds = []; 
+    
+    // VARIABEL BARU UNTUK MENAMPUNG KUIS YANG SUDAH DIACAK
+    public $preparedQuizzes = []; 
 
     public function mount($courseSlug, $lessonSlug = null)
     {
+        // 1. AMBIL DATA COURSE DENGAN PROTEKSI BERLAPIS
         $this->course = Course::where('slug', $courseSlug)
             ->with(['modules' => function($q) {
                 $q->orderBy('course_module.sort_order'); 
             }, 'modules.lessons' => function($q) {
                 $q->where('lessons.is_active', true)
                   ->orderBy('lesson_module.sort_order');
-            }])
+            }, 'prerequisites']) 
+            ->when(Auth::check(), function (Builder $query) {
+                $user = Auth::user();
+
+                if ($user->position_id) {
+                    $query->whereHas('positions', function (Builder $q) use ($user) {
+                        $q->where('positions.id', $user->position_id);
+                    });
+                } else {
+                    $query->whereRaw('1 = 0'); 
+                }
+
+                $userTypeValue = $user->user_type instanceof UserType ? $user->user_type->value : $user->user_type;
+                
+                if (in_array($userTypeValue, ['main_dealer', 'dealer']) && $user->main_dealer_id) {
+                    $query->whereHas('mainDealers', function (Builder $q) use ($user) {
+                        $q->where('main_dealers.id', $user->main_dealer_id);
+                    });
+                }
+            })
             ->firstOrFail();
 
+        // PROTEKSI PRASYARAT
+        if (Auth::check() && $this->course->isLockedForUser(Auth::user())) {
+            session()->flash('error', 'Akses Ditolak! Anda harus menyelesaikan materi prasyarat terlebih dahulu.');
+            $this->redirect(route('my.courses'), navigate: true); 
+            return;
+        }
+
+        // UPDATE LAST ACCESSED COURSE
         if (Auth::check()) {
             $isEnrolled = Auth::user()->courses()->where('course_id', $this->course->id)->exists();
             if ($isEnrolled) {
@@ -37,6 +70,7 @@ class CoursePlayer extends Component
             }
         }
 
+        // SET CURRENT LESSON
         if ($lessonSlug) {
             $this->currentLesson = Lesson::where('slug', $lessonSlug)->firstOrFail();
         } else {
@@ -44,6 +78,12 @@ class CoursePlayer extends Component
             $this->currentLesson = $firstModule ? $firstModule->lessons->first() : null;
         }
 
+        // PERSIAPKAN DATA KUIS JIKA TIPE PELAJARAN ADALAH QUIZ
+        if ($this->currentLesson && $this->currentLesson->type === 'quiz') {
+            $this->prepareQuizzesForCurrentLesson();
+        }
+
+        // CATAT HISTORI VIEW LESSON
         if (Auth::check() && $this->currentLesson) {
             $user = Auth::user();
             $lessonPivot = DB::table('lesson_user')
@@ -79,6 +119,51 @@ class CoursePlayer extends Component
         $this->loadProgress();
     }
 
+    /**
+     * METHOD BARU: MEMPERSIAPKAN KUIS
+     * Method ini akan mengambil data dari DB, mengacak soal, membatasi jumlah,
+     * dan mengacak pilihan jawaban agar siap disajikan ke view.
+     */
+    private function prepareQuizzesForCurrentLesson()
+    {
+        $quizData = $this->currentLesson->quiz_data;
+        if (empty($quizData)) {
+            $this->preparedQuizzes = [];
+            return;
+        }
+
+        $allQuizzes = collect($quizData);
+        $limit = $this->currentLesson->quiz_display_count ?? $allQuizzes->count();
+        
+        // Acak urutan pertanyaan dan batasi jumlahnya
+        $randomQuizzes = $allQuizzes->shuffle()->take($limit);
+
+        $formattedQuizzes = $randomQuizzes->map(function ($quiz) {
+            // Ambil teks dari opsi yang benar sebelum diacak
+            $correctAnswerKey = 'option_' . strtolower($quiz['correct_answer']);
+            $correctAnswerText = $quiz[$correctAnswerKey] ?? null;
+
+            // Kumpulkan semua opsi ke dalam array
+            $options = array_filter([
+                $quiz['option_a'] ?? null,
+                $quiz['option_b'] ?? null,
+                $quiz['option_c'] ?? null,
+                $quiz['option_d'] ?? null,
+            ]);
+
+            // Acak urutan opsi jawaban
+            shuffle($options);
+
+            return [
+                'question' => $quiz['question'],
+                'options' => $options, 
+                'correct_answer_text' => $correctAnswerText, 
+            ];
+        })->values()->toArray();
+
+        $this->preparedQuizzes = $formattedQuizzes;
+    }
+
     public function loadProgress()
     {
         if (Auth::check()) {
@@ -91,14 +176,10 @@ class CoursePlayer extends Component
         }
     }
 
-    /**
-     * Handle Kuis Gagal (DIPANGGIL DARI BLADE)
-     */
     public function recordFailedAttempt()
     {
         $user = Auth::user();
         
-        // 1. Increment jumlah gagal di database
         DB::table('lesson_user')
             ->where('user_id', $user->id)
             ->where('lesson_id', $this->currentLesson->id)
@@ -108,41 +189,43 @@ class CoursePlayer extends Component
                 'updated_at' => now()->timezone('Asia/Jakarta'),
             ]);
 
-        // 2. Cek jumlah gagal terbaru
         $failedCount = DB::table('lesson_user')
             ->where('user_id', $user->id)
             ->where('lesson_id', $this->currentLesson->id)
             ->where('course_id', $this->course->id)
             ->value('failed_attempts');
 
-        // 3. Jika sudah 3x, eksekusi hukuman remidi
         if ($failedCount >= 3) {
-            return $this->resetPreviousLessonProgress();
+            $this->resetPreviousLessonProgress();
+            return route('course.player', [$this->course->slug, $this->getPreviousLesson()->slug ?? $this->currentLesson->slug]);
         }
 
         return $failedCount;
     }
 
-    /**
-     * RESET PROGRESS MATERI SEBELUMNYA (HARDCORE FAIL PUNISHMENT)
-     */
+    private function getPreviousLesson()
+    {
+        $allLessons = $this->course->modules->flatMap->lessons;
+        $currentIndex = $allLessons->search(fn($l) => $l->id === $this->currentLesson->id);
+        
+        if ($currentIndex > 0) {
+            return $allLessons[$currentIndex - 1];
+        }
+        return null;
+    }
+
     public function resetPreviousLessonProgress()
     {
         $user = Auth::user();
-        $allLessons = $this->course->modules->flatMap->lessons;
-        $currentIndex = $allLessons->search(fn($l) => $l->id === $this->currentLesson->id);
+        $previousLesson = $this->getPreviousLesson();
 
-        // Reset hitungan gagal kuis ini dulu biar gak loop
         DB::table('lesson_user')
             ->where('user_id', $user->id)
             ->where('lesson_id', $this->currentLesson->id)
             ->where('course_id', $this->course->id)
             ->update(['failed_attempts' => 0]);
 
-        if ($currentIndex > 0) {
-            $previousLesson = $allLessons[$currentIndex - 1];
-            
-            // 1. Matikan status selesai materi sebelumnya (Centang hijau hilang)
+        if ($previousLesson) {
             DB::table('lesson_user')
                 ->where('user_id', $user->id)
                 ->where('lesson_id', $previousLesson->id)
@@ -152,10 +235,8 @@ class CoursePlayer extends Component
                     'updated_at' => now()->timezone('Asia/Jakarta'),
                 ]);
             
-            // 2. Sinkronkan Progress Kursus (Progress bar turun)
             $this->updateCourseProgress($user);
 
-            // 3. Log Aktivitas - Update text jadi 3x
             UserActivity::create([
                 'user_id' => $user->id,
                 'activity_type' => 'Hukuman Gagal Kuis 3x: Reset Materi ' . $previousLesson->title,
@@ -164,11 +245,7 @@ class CoursePlayer extends Component
             ]);
 
             session()->flash('error', 'Gagal kuis 3x! Kamu wajib tonton ulang materi sebelumnya.');
-
-            return redirect()->route('course.player', [$this->course->slug, $previousLesson->slug]);
         }
-
-        return 0;
     }
 
     public function markAsComplete()
@@ -191,7 +268,7 @@ class CoursePlayer extends Component
                 ->update([
                     'count_completed' => DB::raw('count_completed + 1'),
                     'completed_at' => now()->timezone('Asia/Jakarta'),
-                    'failed_attempts' => 0, // Reset gagal saat akhirnya lulus
+                    'failed_attempts' => 0, 
                     'updated_at' => now()->timezone('Asia/Jakarta'),
                 ]);
 
@@ -225,32 +302,41 @@ class CoursePlayer extends Component
             'completed_at' => $percent == 100 ? now()->timezone('Asia/Jakarta') : null,
         ]);
 
-        // TAMBAHAN: Generate Sertifikat jika progress 100%
         if ($percent == 100) {
             $this->generateCertificate($user);
+            
+            if ($this->course->points_reward > 0 || $this->course->xp_reward > 0) {
+                $alreadyRewarded = $user->pointHistories()
+                    ->where('source_type', Course::class)
+                    ->where('source_id', $this->course->id)
+                    ->exists();
+                    
+                if (!$alreadyRewarded) {
+                    $user->addReward(
+                        $this->course->points_reward ?? 0, 
+                        $this->course->xp_reward ?? 0, 
+                        'Menyelesaikan Kursus: ' . $this->course->title, 
+                        $this->course
+                    );
+                }
+            }
         }
     }
 
-    /**
-     * TAMBAHAN: GENERATE SERTIFIKAT OTOMATIS
-     */
     public function generateCertificate($user)
     {
-        // Cek apakah sertifikat sudah pernah dibuat untuk course ini
         $exists = Certificate::where('user_id', $user->id)
             ->where('course_id', $this->course->id)
             ->exists();
 
         if (!$exists) {
-            // Setup Format Nomor Registrasi
-            // Contoh: 00001/SALESMANSHIP-2/III/2026
             $nextId = (Certificate::max('id') ?? 0) + 1;
             $paddedId = str_pad($nextId, 5, '0', STR_PAD_LEFT); 
             
             $courseCode = strtoupper(Str::slug($this->course->title));
             
             $romans = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
-            $month = $romans[date('n') - 1]; // Konversi bulan jadi romawi
+            $month = $romans[date('n') - 1]; 
             $year = date('Y');
 
             $certNumber = "{$paddedId}/{$courseCode}/{$month}/{$year}";
@@ -275,7 +361,6 @@ class CoursePlayer extends Component
         }
     }
     
-
     public function render()
     {
         return view('livewire.course-player')->layout('layouts.learning');
