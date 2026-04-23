@@ -11,7 +11,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Mendaftarkan alias middleware untuk SSO Google
+        $middleware->alias([
+            'require.google' => \App\Http\Middleware\EnsureGoogleIsLinked::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

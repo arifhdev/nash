@@ -38,17 +38,25 @@ class LessonResource extends Resource
                             ->live(onBlur: true)
                             ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
                         
-                        // SUDAH DIPERBAIKI MENCEGAH DUPLIKAT ERROR 500
                         Forms\Components\TextInput::make('slug')
                             ->required()
                             ->maxLength(255)
                             ->unique(ignoreRecord: true), 
 
+                        // TAUTKAN KE MODULE
+                        Forms\Components\Select::make('modules')
+                            ->relationship('modules', 'name')
+                            ->label('Tautkan ke Module (Opsional)')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->columnSpanFull(),
+
                         Forms\Components\Select::make('type')
                             ->label('Tipe Pelajaran')
                             ->options([
                                 'video' => 'Video',
-                                'pdf'   => 'PDF Document', // Ganti Artikel ke PDF
+                                'pdf'   => 'PDF Document',
                                 'quiz'  => 'Kuis',
                             ])
                             ->default('video')
@@ -59,7 +67,7 @@ class LessonResource extends Resource
                                 $set('duration_minutes', 0);
                             }),
 
-                        // --- LOGIC VIDEO ---
+                        // LOGIC VIDEO
                         Forms\Components\TextInput::make('video_url')
                             ->label('URL Video (YouTube/Vimeo)')
                             ->visible(fn (Get $get) => $get('type') === 'video')
@@ -67,7 +75,7 @@ class LessonResource extends Resource
                             ->placeholder('https://www.youtube.com/watch?v=...')
                             ->columnSpanFull(),
                         
-                        // --- LOGIC PDF UPLOAD ---
+                        // LOGIC PDF UPLOAD
                         Forms\Components\FileUpload::make('content')
                             ->label('Upload File PDF')
                             ->acceptedFileTypes(['application/pdf'])
@@ -79,7 +87,7 @@ class LessonResource extends Resource
                             ->required(fn (Get $get) => $get('type') === 'pdf')
                             ->columnSpanFull(),
 
-                        // --- LOGIC QUIZ SETTINGS (BARU) ---
+                        // LOGIC QUIZ SETTINGS
                         Forms\Components\TextInput::make('quiz_display_count')
                             ->label('Jumlah Pertanyaan Ditampilkan')
                             ->numeric()
@@ -90,18 +98,17 @@ class LessonResource extends Resource
                             ->rules([
                                 fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                     $totalQuiz = count($get('quiz_data') ?? []);
-                                    // Validasi: jumlah tampil tidak boleh lebih dari jumlah soal yang dibuat
                                     if ($totalQuiz > 0 && $value > $totalQuiz) {
                                         $fail("Jumlah yang ditampilkan ({$value}) tidak boleh melebihi total pertanyaan yang dibuat ({$totalQuiz}).");
                                     }
                                 },
                             ]),
 
-                        // --- LOGIC QUIZ ---
+                        // LOGIC QUIZ
                         Forms\Components\Repeater::make('quiz_data')
                             ->label('Pertanyaan Kuis')
                             ->visible(fn (Get $get) => $get('type') === 'quiz')
-                            ->live() // <-- Tambahkan live() agar hitungan kuis up-to-date untuk validasi
+                            ->live() 
                             ->schema([
                                 Forms\Components\Textarea::make('question')
                                     ->label('Pertanyaan')
@@ -125,7 +132,7 @@ class LessonResource extends Resource
                             ->columnSpanFull()
                             ->collapsible(),
 
-                        // --- SETTING DURASI & MINIMAL BACA ---
+                        // SETTING DURASI & MINIMAL BACA
                         Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\TextInput::make('duration_minutes')
@@ -155,6 +162,7 @@ class LessonResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->with('modules.courses'))
+            // Tombol Import sudah dipindah ke halaman ListLessons, jadi bagian ini bersih.
             ->columns([
                 Tables\Columns\TextColumn::make('title')
                     ->label('Judul Pelajaran')

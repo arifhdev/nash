@@ -8,7 +8,7 @@ use App\Models\Event;
 use App\Models\Faq;
 use App\Models\Testimonial;
 use App\Models\LandingPageSetting; 
-use App\Enums\UserType; // Pastikan ini di-import
+use App\Enums\UserType;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -39,7 +39,6 @@ class HomePage extends Component
                 $user = auth()->user();
 
                 // A. Filter berdasarkan Jabatan (Position)
-                // User hanya bisa melihat course yang di-assign ke jabatan mereka
                 if ($user->position_id) {
                     $query->whereHas('positions', function (Builder $q) use ($user) {
                         $q->where('positions.id', $user->position_id);
@@ -47,7 +46,6 @@ class HomePage extends Component
                 }
 
                 // B. Filter berdasarkan Wilayah Main Dealer 
-                // (Hanya berlaku untuk tipe karyawan Main Dealer dan Dealer)
                 $userTypeValue = $user->user_type instanceof UserType ? $user->user_type->value : $user->user_type;
                 
                 if (in_array($userTypeValue, ['main_dealer', 'dealer']) && $user->main_dealer_id) {
@@ -59,7 +57,8 @@ class HomePage extends Component
             ->when($this->selectedCategoryId, function ($query) {
                 $query->where('category_id', $this->selectedCategoryId);
             })
-            ->latest()
+            ->latest() // Urutkan dari yang terbaru
+            ->take(6)  // <-- TAMBAHKAN INI UNTUK MEMBATASI HANYA 6 COURSE
             ->get();
 
         // 3. Query Event (5 Event terbaru untuk Bento Grid)

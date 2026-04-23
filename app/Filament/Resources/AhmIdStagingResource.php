@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Model;
 class AhmIdStagingResource extends Resource
 {
     protected static ?string $model = AhmIdStaging::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
     protected static ?string $navigationLabel = 'Monitor AHM ID Temp';
     protected static ?string $navigationGroup = 'System';
@@ -33,22 +32,19 @@ class AhmIdStagingResource extends Resource
                     ->weight('bold'),
                     
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Lengkap')
+                    ->label('Nama (Excel)')
                     ->searchable()
                     ->sortable(),
 
-                // Menampilkan data teks asli dari Excel
                 Tables\Columns\TextColumn::make('divisi')
-                    ->label('Divisi (Excel)')
+                    ->label('Kode Divisi (Excel)') // Sekarang isinya Kode (MARKETING, LOG, dll)
                     ->badge()
-                    ->color('info')
-                    ->placeholder('Kosong'),
+                    ->color('info'),
 
                 Tables\Columns\TextColumn::make('jabatan')
                     ->label('Jabatan (Excel)')
                     ->badge()
-                    ->color('gray')
-                    ->placeholder('Kosong'),
+                    ->color('gray'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Waktu Import')
@@ -59,11 +55,6 @@ class AhmIdStagingResource extends Resource
             ->poll('3s')
             ->actions([
                 Tables\Actions\DeleteAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
             ]);
     }
 

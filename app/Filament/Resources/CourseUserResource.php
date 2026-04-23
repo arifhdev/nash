@@ -3,7 +3,11 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\CourseUserResource\Pages;
-use App\Models\CourseUser; // Pakai model Pivot tadi
+use App\Models\CourseUser;
+use App\Models\Division;
+use App\Models\Position;
+use App\Models\MainDealer;
+use App\Models\Dealer;
 use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -23,11 +27,10 @@ class CourseUserResource extends Resource
 
     protected static ?string $pluralLabel = 'Laporan Enrollment';
 
-    protected static ?string $navigationGroup = 'Laporan'; // Grup Menu Baru
+    protected static ?string $navigationGroup = 'Laporan'; 
 
     protected static ?int $navigationSort = 1;
 
-    // Kita bikin READ ONLY saja biar jadi Laporan murni
     public static function canCreate(): bool
     {
         return false;
@@ -42,7 +45,6 @@ class CourseUserResource extends Resource
                         'active' => 'On Progress',
                         'completed' => 'Selesai',
                     ]),
-                // Tambahkan field lain jika ingin bisa edit data pivot
             ]);
     }
 
@@ -50,21 +52,18 @@ class CourseUserResource extends Resource
     {
         return $table
             ->columns([
-                // 1. Nama User
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Nama User')
                     ->searchable()
                     ->sortable()
                     ->description(fn (CourseUser $record) => $record->user->email ?? '-'),
 
-                // 2. Nama Course
                 Tables\Columns\TextColumn::make('course.title')
                     ->label('Course')
                     ->searchable()
                     ->sortable()
                     ->limit(30),
 
-                // 3. Status
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -73,27 +72,23 @@ class CourseUserResource extends Resource
                         default => 'gray',
                     }),
 
-                // 4. Progress
                 Tables\Columns\TextColumn::make('progress_percent')
                     ->label('Progress')
                     ->numeric()
                     ->suffix('%')
                     ->sortable(),
 
-                // 5. Tanggal Enroll
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Tgl Enroll')
                     ->dateTime('d M Y')
                     ->sortable(),
                 
-                // 6. Tanggal Selesai
                 Tables\Columns\TextColumn::make('completed_at')
                     ->label('Tgl Selesai')
                     ->dateTime('d M Y')
                     ->sortable()
                     ->placeholder('-'),
 
-                // 7. Durasi (Custom Logic)
                 Tables\Columns\TextColumn::make('duration')
                     ->label('Durasi Pengerjaan')
                     ->state(function (Model $record): string {
@@ -105,30 +100,71 @@ class CourseUserResource extends Resource
                                 'parts' => 2,
                             ]);
                     }),
-                // 8. Last Accessed
+
                 Tables\Columns\TextColumn::make('last_accessed_at')
                     ->label('Akses Terakhir')
-                    ->dateTime('d M Y H:i') // Format tanggal dan jam
+                    ->dateTime('d M Y H:i') 
                     ->sortable()
                     ->placeholder('Belum pernah diakses'),
             ])
             ->filters([
-                // Filter berdasarkan Status
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
                         'active' => 'On Progress',
                         'completed' => 'Selesai',
                     ]),
                 
-                // Filter berdasarkan Course
                 Tables\Filters\SelectFilter::make('course_id')
                     ->relationship('course', 'title')
                     ->searchable()
                     ->preload()
                     ->label('Filter Course'),
 
-                // Filter Tanggal Enroll
-                Tables\Filters\Filter::make('created_at')
+                Tables\Filters\SelectFilter::make('division_id')
+                    ->label('Divisi')
+                    ->options(Division::pluck('name', 'id'))
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['value'],
+                            fn (Builder $query, $value): Builder => $query->whereHas('user', fn($q) => $q->where('division_id', $value))
+                        );
+                    }),
+
+                Tables\Filters\SelectFilter::make('position_id')
+                    ->label('Jabatan')
+                    ->options(Position::pluck('name', 'id'))
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['value'],
+                            fn (Builder $query, $value): Builder => $query->whereHas('user', fn($q) => $q->where('position_id', $value))
+                        );
+                    }),
+
+                Tables\Filters\SelectFilter::make('main_dealer_id')
+                    ->label('Main Dealer')
+                    ->options(MainDealer::pluck('name', 'id'))
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['value'],
+                            fn (Builder $query, $value): Builder => $query->whereHas('user', fn($q) => $q->where('main_dealer_id', $value))
+                        );
+                    }),
+
+                Tables\Filters\SelectFilter::make('dealer_id')
+                    ->label('Dealer')
+                    ->options(Dealer::pluck('name', 'id'))
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['value'],
+                            fn (Builder $query, $value): Builder => $query->whereHas('user', fn($q) => $q->where('dealer_id', $value))
+                        );
+                    }),
+
+                Tables\Filters\Filter::make('enrollment_date')
                     ->form([
                         Forms\Components\DatePicker::make('created_from')->label('Enroll Dari'),
                         Forms\Components\DatePicker::make('created_until')->label('Enroll Sampai'),
@@ -136,13 +172,26 @@ class CourseUserResource extends Resource
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
-                                $data['created_from'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '>=', $date),
+                                $data['created_from'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereDate('course_user.created_at', '>=', $date),
                             )
                             ->when(
-                                $data['created_until'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
+                                $data['created_until'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereDate('course_user.created_at', '<=', $date),
                             );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        
+                        if ($data['created_from'] ?? null) {
+                            $indicators['created_from'] = 'Enroll Dari: ' . Carbon::parse($data['created_from'])->format('d M Y');
+                        }
+                        
+                        if ($data['created_until'] ?? null) {
+                            $indicators['created_until'] = 'Enroll Sampai: ' . Carbon::parse($data['created_until'])->format('d M Y');
+                        }
+
+                        return $indicators;
                     })
             ])
             ->actions([
@@ -154,10 +203,8 @@ class CourseUserResource extends Resource
                     ->modalContent(fn ($record) => view('filament.resources.course-user-resource.detail-progress', [
                         'record' => $record,
                     ]))
-                    ->modalSubmitAction(false) // Sembunyikan tombol submit karena ini cuma view
+                    ->modalSubmitAction(false) 
                     ->modalCancelActionLabel('Tutup'),
-                // Tables\Actions\EditAction::make(), // Aktifkan jika mau edit
-                // Tables\Actions\DeleteAction::make(), // Aktifkan jika mau delete
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -170,28 +217,21 @@ class CourseUserResource extends Resource
     {
         return [
             'index' => Pages\ListCourseUsers::route('/'),
-            // Kita matikan create/edit biar jadi report only
-            // 'create' => Pages\CreateCourseUser::route('/create'),
-            // 'edit' => Pages\EditCourseUser::route('/{record}/edit'),
         ];
     }
 
-    // --- PENTING: BATASI AKSES DATA (SCOPING) ---
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
         $user = auth()->user();
 
-        // Super Admin lihat semua
         if ($user->hasRole('super_admin')) {
             return $query;
         }
 
-        // Middle Admin HANYA lihat enrollment dari User yg ada di Main Dealer dia
         if ($user->hasRole('middle_admin')) {
             return $query->whereHas('user', function ($q) use ($user) {
                 $q->where('main_dealer_id', $user->main_dealer_id);
-                // Opsional: Sembunyikan data Super Admin dari laporan
                 $q->whereDoesntHave('roles', fn($r) => $r->where('name', 'super_admin'));
             });
         }

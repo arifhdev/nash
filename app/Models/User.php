@@ -30,13 +30,15 @@ class User extends Authenticatable implements FilamentUser
         'name',
         'email',
         'phone_number', 
-        'position_id',  
+        'position_id',
+        'division_id',  // <-- TAMBAHAN: Kolom Divisi dimasukkan
         'user_type',    
         'main_dealer_id',
         'dealer_id',
         'password',
         'total_points',
         'total_xp', // Gamification Leaderboard
+        'google_id',
     ];
 
     /**
@@ -70,7 +72,9 @@ class User extends Authenticatable implements FilamentUser
             if ($user->honda_id) \App\Models\HondaIdVerification::where('honda_id', $user->honda_id)->update(['has_account' => true]);
             if ($user->ahm_id) \App\Models\AhmIdVerification::where('ahm_id', $user->ahm_id)->update(['has_account' => true]);
             if ($user->trainer_id) \App\Models\TrainerIdVerification::where('trainer_id', $user->trainer_id)->update(['has_account' => true]);
-            if ($user->custom_id) \App\Models\CustomIdVerification::where('custom_id', $user->custom_id)->update(['has_account' => true]);
+            
+            // FIXED: Diganti menjadi MdIdVerification
+            if ($user->custom_id) \App\Models\MdIdVerification::where('custom_id', $user->custom_id)->update(['has_account' => true]);
         });
 
         // 2. Trigger saat user DIHAPUS (Kembalikan status ID agar bisa dipakai lagi)
@@ -78,7 +82,9 @@ class User extends Authenticatable implements FilamentUser
             if ($user->honda_id) \App\Models\HondaIdVerification::where('honda_id', $user->honda_id)->update(['has_account' => false]);
             if ($user->ahm_id) \App\Models\AhmIdVerification::where('ahm_id', $user->ahm_id)->update(['has_account' => false]);
             if ($user->trainer_id) \App\Models\TrainerIdVerification::where('trainer_id', $user->trainer_id)->update(['has_account' => false]);
-            if ($user->custom_id) \App\Models\CustomIdVerification::where('custom_id', $user->custom_id)->update(['has_account' => false]);
+            
+            // FIXED: Diganti menjadi MdIdVerification
+            if ($user->custom_id) \App\Models\MdIdVerification::where('custom_id', $user->custom_id)->update(['has_account' => false]);
         });
 
         // 3. Trigger saat user DIEDIT (Sinkronisasi jika ID diubah oleh Admin)
@@ -101,16 +107,16 @@ class User extends Authenticatable implements FilamentUser
                 if ($original) \App\Models\TrainerIdVerification::where('trainer_id', $original)->update(['has_account' => false]);
                 if ($user->trainer_id) \App\Models\TrainerIdVerification::where('trainer_id', $user->trainer_id)->update(['has_account' => true]);
             }
-            // Cek & Update MD ID (Custom ID)
+            // FIXED: Cek & Update MD ID (Menggunakan MdIdVerification)
             if ($user->isDirty('custom_id')) {
                 $original = $user->getOriginal('custom_id');
-                if ($original) \App\Models\CustomIdVerification::where('custom_id', $original)->update(['has_account' => false]);
-                if ($user->custom_id) \App\Models\CustomIdVerification::where('custom_id', $user->custom_id)->update(['has_account' => true]);
+                if ($original) \App\Models\MdIdVerification::where('custom_id', $original)->update(['has_account' => false]);
+                if ($user->custom_id) \App\Models\MdIdVerification::where('custom_id', $user->custom_id)->update(['has_account' => true]);
             }
         });
     }
 
-    // --- Relasi Organisasi (Main Dealer, Dealer, Jabatan) ---
+    // --- Relasi Organisasi (Main Dealer, Dealer, Divisi, Jabatan) ---
 
     // 1. Relasi ke Main Dealer (WAJIB ADA untuk Filament)
     public function mainDealer()
@@ -124,7 +130,13 @@ class User extends Authenticatable implements FilamentUser
         return $this->belongsTo(Dealer::class, 'dealer_id');
     }
 
-    // 3. Relasi Jabatan (Single / 1 User 1 Jabatan)
+    // 3. Relasi Divisi (TAMBAHAN BARU)
+    public function division()
+    {
+        return $this->belongsTo(Division::class, 'division_id');
+    }
+
+    // 4. Relasi Jabatan (Single / 1 User 1 Jabatan)
     public function position()
     {
         return $this->belongsTo(Position::class, 'position_id');

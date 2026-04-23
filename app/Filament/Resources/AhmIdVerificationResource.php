@@ -4,8 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\AhmIdVerificationResource\Pages;
 use App\Models\AhmIdVerification;
-use App\Models\Position; // Jangan lupa import model Position
-use App\Enums\UserType; // Opsional, jika kamu pakai Enum untuk filter query
+use App\Models\Division; // Import Model Division
+use App\Models\Position;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -39,52 +39,40 @@ class AhmIdVerificationResource extends Resource
                             ->required() 
                             ->maxLength(255),
 
-                        // --- TAMBAHAN DIVISI & JABATAN (SINGLE) ---
-                        Forms\Components\Select::make('divisi')
+                        // --- UPDATE: AMBIL DARI MASTER DIVISION ---
+                        Forms\Components\Select::make('division_id')
                             ->label('Divisi')
-                            ->options(function () {
-                                // Ambil daftar divisi khusus untuk karyawan AHM
-                                return Position::query()
-                                    ->where('user_type', 'ahm') // Sesuaikan jika value enum-mu berbeda (misal: UserType::AHM->value)
-                                    ->whereNotNull('divisi')
-                                    ->distinct()
-                                    ->pluck('divisi', 'divisi');
-                            })
+                            ->options(Division::query()->pluck('name', 'id')) // Ambil dari Tabel Division
                             ->live()
-                            ->dehydrated(false) // Field virtual, tidak masuk ke db `ahm_id_verifications`
-                            ->placeholder('Pilih Divisi')
-                            ->afterStateUpdated(fn (Set $set) => $set('position_id', null)) // Reset jabatan jika divisi diganti
+                            ->dehydrated(false)
+                            ->searchable()
+                            ->preload()
+                            ->placeholder('Pilih Divisi Master')
+                            ->afterStateUpdated(fn (Set $set) => $set('position_id', null))
                             ->afterStateHydrated(function (Set $set, ?Model $record) {
-                                // Auto-fill divisi saat mode Edit
                                 if ($record && $record->position) {
-                                    $set('divisi', $record->position->divisi);
+                                    $set('division_id', $record->position->division_id);
                                 }
                             }),
 
                         Forms\Components\Select::make('position_id')
                             ->label('Jabatan')
                             ->relationship('position', 'name', modifyQueryUsing: function (Builder $query, Get $get) {
-                                $divisi = $get('divisi');
-
-                                if ($divisi) {
-                                    return $query->where('divisi', $divisi)->where('user_type', 'ahm');
+                                $divisionId = $get('division_id');
+                                if ($divisionId) {
+                                    return $query->where('division_id', $divisionId)->where('user_type', 'ahm');
                                 }
-                                return $query->where('id', 0); // Kosongkan pilihan jika divisi belum dipilih
+                                return $query->where('id', 0);
                             })
                             ->searchable()
                             ->preload()
+                            ->required()
                             ->placeholder('Pilih Jabatan (Pilih Divisi Dulu)')
-                            ->disabled(fn (Get $get) => empty($get('divisi'))),
-                        // --- END TAMBAHAN ---
+                            ->disabled(fn (Get $get) => empty($get('division_id'))),
                         
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->default(true),
-
-                        Forms\Components\Toggle::make('has_account')
-                            ->label('Sudah Punya Akun?')
-                            ->disabled()
-                            ->dehydrated(false),
                     ])->columns(2),
             ]);
     }
@@ -104,12 +92,13 @@ class AhmIdVerificationResource extends Resource
                     ->searchable()
                     ->sortable(),
 
-                // --- TAMBAHAN KOLOM TABEL ---
-                Tables\Columns\TextColumn::make('position.divisi')
+                // --- UPDATE: TAMPILKAN NAMA DIVISI DARI RELASI ---
+                Tables\Columns\TextColumn::make('position.division.name')
                     ->label('Divisi')
                     ->badge()
                     ->color('info')
                     ->placeholder('N/A')
+                    ->sortable()
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('position.name')
@@ -118,10 +107,8 @@ class AhmIdVerificationResource extends Resource
                     ->color('gray')
                     ->placeholder('N/A')
                     ->searchable(),
-                // --- END TAMBAHAN ---
 
                 Tables\Columns\IconColumn::make('is_active')->label('Aktif?')->boolean(),
-                Tables\Columns\IconColumn::make('has_account')->label('Sudah Daftar?')->boolean(),
                 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Tgl Input')
@@ -130,7 +117,11 @@ class AhmIdVerificationResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                // Opsional: Filter berdasarkan Divisi / Jabatan bisa ditambahkan di sini
+                Tables\Filters\SelectFilter::make('division')
+                    ->label('Filter Divisi')
+                    ->relationship('position.division', 'name')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

@@ -4,11 +4,17 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\TrainerIdVerificationResource\Pages;
 use App\Models\TrainerIdVerification;
+use App\Models\Division;
+use App\Models\Position;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class TrainerIdVerificationResource extends Resource
 {
@@ -21,18 +27,16 @@ class TrainerIdVerificationResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Informasi Trainer ID')
-                    ->description('Masukkan data Trainer ID yang bernaung di bawah Main Dealer.')
+                Forms\Components\Section::make('Informasi Utama')
                     ->schema([
                         Forms\Components\TextInput::make('trainer_id')
                             ->label('Trainer ID')
                             ->required()
-                            ->maxLength(255)
                             ->unique(ignoreRecord: true),
                         
-                        // Field Nama Lengkap yang ditarik dari DB
                         Forms\Components\TextInput::make('name')
                             ->label('Nama Lengkap')
+                            ->required()
                             ->maxLength(255),
                             
                         Forms\Components\Select::make('main_dealer_id')
@@ -42,18 +46,52 @@ class TrainerIdVerificationResource extends Resource
                             ->searchable(['name', 'code'])
                             ->preload()
                             ->required(),
-                    ])->columns(3), // Diubah ke 3 kolom agar satu baris pas: ID, Nama, MD
+                    ])->columns(3),
 
-                Forms\Components\Section::make('Status')
+                Forms\Components\Section::make('Detail Pekerjaan')
+                    ->schema([
+                        // --- UPDATE: MENGGUNAKAN MASTER DIVISI ---
+                        Forms\Components\Select::make('division_id')
+                            ->label('Divisi')
+                            ->options(Division::query()->pluck('name', 'id'))
+                            ->live()
+                            ->dehydrated(false)
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->placeholder('Pilih Divisi Master')
+                            ->afterStateUpdated(fn (Set $set) => $set('position_id', null))
+                            ->afterStateHydrated(function (Set $set, ?Model $record) {
+                                if ($record && $record->position) {
+                                    $set('division_id', $record->position->division_id);
+                                }
+                            }),
+
+                        Forms\Components\Select::make('position_id')
+                            ->label('Jabatan')
+                            ->relationship('position', 'name', modifyQueryUsing: function (Builder $query, Get $get) {
+                                $divisionId = $get('division_id');
+                                if ($divisionId) {
+                                    // Trainer biasanya bernaung di user_type 'main_dealer'
+                                    return $query->where('division_id', $divisionId)->where('user_type', 'main_dealer');
+                                }
+                                return $query->where('id', 0);
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->placeholder('Pilih Jabatan (Pilih Divisi Dulu)')
+                            ->disabled(fn (Get $get) => empty($get('division_id'))),
+                    ])->columns(2),
+
+                Forms\Components\Section::make('Status & Akun')
                     ->schema([
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
-                            ->helperText('Jika dimatikan, Trainer ID ini tidak bisa digunakan untuk mendaftar.')
                             ->default(true),
 
                         Forms\Components\Toggle::make('has_account')
                             ->label('Sudah Punya Akun?')
-                            ->helperText('Otomatis dicentang oleh sistem jika user sudah berhasil mendaftar.')
                             ->disabled()
                             ->dehydrated(false),
                     ])->columns(2),
@@ -65,16 +103,30 @@ class TrainerIdVerificationResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('trainer_id')
-                    ->label('Trainer ID')
+                    ->label('ID')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->weight('bold'),
 
-                // Kolom Nama Lengkap di Tabel
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Lengkap')
+                    ->label('Nama')
                     ->searchable()
                     ->sortable(),
+
+                // --- Tampilkan Nama Divisi dari Relasi ---
+                Tables\Columns\TextColumn::make('position.division.name')
+                    ->label('Divisi')
+                    ->badge()
+                    ->color('info')
+                    ->sortable()
+                    ->searchable(),
+
+                Tables\Columns\TextColumn::make('position.name')
+                    ->label('Jabatan')
+                    ->badge()
+                    ->color('gray')
+                    ->searchable(),
 
                 Tables\Columns\TextColumn::make('mainDealer.name')
                     ->label('Main Dealer')
@@ -83,33 +135,28 @@ class TrainerIdVerificationResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\IconColumn::make('is_active')
-                    ->label('Aktif?')
-                    ->boolean()
-                    ->sortable(),
+                    ->label('Aktif')
+                    ->boolean(),
 
                 Tables\Columns\IconColumn::make('has_account')
-                    ->label('Sudah Daftar?')
-                    ->boolean()
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->label('Daftar')
+                    ->boolean(),
             ])
             ->filters([
-                Tables\Filters\TernaryFilter::make('has_account')->label('Status Pendaftaran'),
-                Tables\Filters\TernaryFilter::make('is_active')->label('Status Aktif'),
+                Tables\Filters\SelectFilter::make('division')
+                    ->label('Filter Divisi')
+                    ->relationship('position.division', 'name')
+                    ->searchable()
+                    ->preload(),
+                Tables\Filters\SelectFilter::make('main_dealer_id')
+                    ->relationship('mainDealer', 'name')
+                    ->label('Filter Main Dealer')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
             ]);
     }
 

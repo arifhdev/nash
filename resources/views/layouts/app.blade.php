@@ -18,6 +18,16 @@
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <meta name="facebook-domain-verification" content="mbqps27tg1aj7ormkoi2lwc3px4sry" />
+
+    <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-GWZ3PCDXX3"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-GWZ3PCDXX3');
+</script>
 </head>
 
 <body class="bg-gray-50 font-sans antialiased text-gray-900 flex flex-col min-h-screen">

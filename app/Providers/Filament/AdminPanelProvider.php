@@ -19,7 +19,8 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Filament\Support\Enums\MaxWidth;
 use Filament\View\PanelsRenderHook; 
-use Illuminate\Support\Facades\Blade; 
+use Illuminate\Support\Facades\Blade;
+use Leandrocfe\FilamentApexCharts\FilamentApexChartsPlugin;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -37,6 +38,10 @@ class AdminPanelProvider extends PanelProvider
             ->brandLogo(asset('images/logo.png')) 
             ->brandLogoHeight('3rem')
             ->favicon(asset('images/favicon.png'))
+            
+            // ---> Tambahkan baris ini untuk tombol ngumpetin sidebar <---
+            ->sidebarCollapsibleOnDesktop() 
+            
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
@@ -46,6 +51,12 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([
                 //Widgets\AccountWidget::class,
                 //Widgets\FilamentInfoWidget::class,
+            ])
+            ->plugins([ 
+                FilamentApexChartsPlugin::make(),
+                \Croustibat\FilamentJobsMonitor\FilamentJobsMonitorPlugin::make()
+                    ->navigationGroup('System') // Nama grup di sidebar
+                    ->navigationIcon('heroicon-o-server-stack'), // Ganti icon kalau mau
             ])
             ->renderHook(
                 PanelsRenderHook::FOOTER, 

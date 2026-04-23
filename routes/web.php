@@ -26,6 +26,8 @@ use App\Livewire\Frontend\Klhn\KlhnEventDetail;
 use App\Livewire\Frontend\Broadcast\LiveBroadcastList;
 use App\Livewire\Frontend\Broadcast\LiveBroadcastDetail;
 
+use App\Http\Controllers\Auth\SocialiteController;
+
 /*
 |--------------------------------------------------------------------------
 | Public Routes (Bisa diakses SIAPA SAJA tanpa login)
@@ -46,6 +48,9 @@ Route::middleware(['guest'])->group(function () {
     Route::get('/register', Register::class)->name('register');
 });
 
+Route::get('auth/google', [SocialiteController::class, 'redirectToGoogle'])->name('auth.google');
+Route::get('auth/google/callback', [SocialiteController::class, 'handleGoogleCallback']);
+
 
 /*
 |--------------------------------------------------------------------------
@@ -54,7 +59,7 @@ Route::middleware(['guest'])->group(function () {
 | Semua route di dalam grup ini TERKUNCI. 
 | Jika belum login, user akan otomatis dilempar ke halaman /login.
 */
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'require.google'])->group(function () {
 
     // 1. Dashboard / Home
     Route::get('/', HomePage::class)->name('home');

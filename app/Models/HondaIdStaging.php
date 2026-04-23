@@ -2,13 +2,21 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class HondaIdStaging extends Model
 {
-    public $timestamps = false; // Set true jika migration pakai timestamps(), atau false jika tidak.
-    protected $guarded = [];
-    protected $primaryKey = 'honda_id';
-    protected $keyType = 'string';
-    public $incrementing = false;
+    use HasFactory;
+
+    protected $table = 'honda_id_stagings';
+
+    protected $fillable = [
+        'honda_id',
+        'name',
+        'md_code',
+        'dealer_code',
+        'jabatan',
+        'divisi',
+    ];
 }

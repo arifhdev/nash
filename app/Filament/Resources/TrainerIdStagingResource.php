@@ -19,7 +19,6 @@ class TrainerIdStagingResource extends Resource
 
     public static function canCreate(): bool { return false; }
     public static function canEdit(Model $record): bool { return false; }
-    public static function canDelete(Model $record): bool { return false; }
 
     public static function table(Table $table): Table
     {
@@ -29,22 +28,34 @@ class TrainerIdStagingResource extends Resource
                     ->label('Trainer ID')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Lengkap')
+                    ->label('Nama (Excel)')
                     ->searchable()
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('divisi')
+                    ->label('Kode Divisi (Excel)')
+                    ->badge()
+                    ->color('info'),
+
+                Tables\Columns\TextColumn::make('jabatan')
+                    ->label('Jabatan (Excel)')
+                    ->badge()
+                    ->color('gray'),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Waktu Import')
-                    ->dateTime()
+                    ->dateTime('d M Y, H:i:s')
                     ->sortable(),
             ])
             ->defaultSort('created_at', 'desc')
-            ->poll('5s')
-            ->actions([])
-            ->bulkActions([]);
+            ->poll('3s')
+            ->actions([
+                Tables\Actions\DeleteAction::make(),
+            ]);
     }
 
     public static function getPages(): array

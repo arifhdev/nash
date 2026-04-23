@@ -6,15 +6,15 @@ use App\Models\AhmIdStaging;
 use App\Models\AhmIdVerification;
 use App\Models\Position; 
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\ToModel;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
-use Illuminate\Contracts\Queue\ShouldQueue; // 1. KEMBALIKAN IMPORT INI
+use Illuminate\Contracts\Queue\ShouldQueue; 
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\BeforeImport;
 use Maatwebsite\Excel\Events\AfterImport; 
 
-// 2. KEMBALIKAN ShouldQueue DI SINI
 class AhmIdVerificationExcelImport implements ToModel, WithHeadingRow, WithChunkReading, ShouldQueue, WithEvents
 {
     protected $importId;
@@ -27,16 +27,19 @@ class AhmIdVerificationExcelImport implements ToModel, WithHeadingRow, WithChunk
     public function registerEvents(): array
     {
         return [
+            // 1. Persiapan sebelum data masuk
             BeforeImport::class => function(BeforeImport $event) {
                 AhmIdStaging::truncate();
-                AhmIdVerification::query()->update(['is_active' => false]);
+                // Kita tidak matikan is_active di sini agar tidak ada downtime saat proses import berjalan
             },
 
-            // Event ini yang akan mencegah UI loading selamanya
+            // 2. Finalisasi setelah semua chunk selesai
             AfterImport::class => function(AfterImport $event) {
+                // Matikan data yang tidak ada di staging (Data lama yang sudah dihapus di Excel)
+                AhmIdVerification::whereNotIn('ahm_id', AhmIdStaging::pluck('ahm_id'))->update(['is_active' => false]);
+
                 if ($this->importId) {
                     $importLog = Import::find($this->importId);
-                    
                     if ($importLog) {
                         $importLog->update([
                             'completed_at' => now(),
@@ -52,18 +55,21 @@ class AhmIdVerificationExcelImport implements ToModel, WithHeadingRow, WithChunk
     {
         $ahmId = isset($row['ahm_id']) ? trim((string)$row['ahm_id']) : null;
         $name = isset($row['name']) ? trim((string)$row['name']) : (isset($row['nama']) ? trim((string)$row['nama']) : null);
-        $divisi = isset($row['divisi']) ? trim((string)$row['divisi']) : null;
-        $jabatan = isset($row['jabatan']) ? trim((string)$row['jabatan']) : (isset($row['position']) ? trim((string)$row['position']) : null);
+        $divisiCode = isset($row['divisi']) ? trim((string)$row['divisi']) : null; // Isinya sekarang CODE (MARKETING, LOGISTIC, dll)
+        $jabatanName = isset($row['jabatan']) ? trim((string)$row['jabatan']) : (isset($row['position']) ? trim((string)$row['position']) : null);
 
         if (empty($ahmId)) {
             return null;
         }
 
+        // KUNCINYA DI SINI: Cari Position berdasarkan Nama Jabatan DAN Code Divisinya
         $positionId = null;
-        if (!empty($divisi) && !empty($jabatan)) {
+        if (!empty($divisiCode) && !empty($jabatanName)) {
             $position = Position::where('user_type', 'ahm')
-                ->where('divisi', $divisi)
-                ->where('name', $jabatan)
+                ->where('name', $jabatanName)
+                ->whereHas('division', function ($query) use ($divisiCode) {
+                    $query->where('code', $divisiCode);
+                })
                 ->first();
 
             if ($position) {
@@ -71,22 +77,26 @@ class AhmIdVerificationExcelImport implements ToModel, WithHeadingRow, WithChunk
             }
         }
 
+        // Simpan ke Staging untuk tracking
         AhmIdStaging::create([
             'ahm_id'  => $ahmId,
             'name'    => $name,
-            'divisi'  => $divisi,
-            'jabatan' => $jabatan,
+            'divisi'  => $divisiCode,
+            'jabatan' => $jabatanName,
         ]);
 
+        // Upsert ke Tabel Utama
         AhmIdVerification::updateOrCreate(
             ['ahm_id' => $ahmId],
             [
                 'name'        => $name, 
                 'position_id' => $positionId, 
-                'is_active'   => true
+                'is_active'   => true, // Selalu aktifkan jika ada di Excel terbaru
+                'updated_at'  => now(),
             ]
         );
 
+        // Update progress monitor Filament
         $importLog = Import::find($this->importId);
         $importLog?->increment('processed_rows');
 

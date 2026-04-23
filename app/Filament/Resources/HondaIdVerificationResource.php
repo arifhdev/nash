@@ -4,6 +4,10 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\HondaIdVerificationResource\Pages;
 use App\Models\HondaIdVerification;
+use App\Models\Division;
+use App\Models\Position;
+use App\Models\MainDealer;
+use App\Models\Dealer;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -12,11 +16,11 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class HondaIdVerificationResource extends Resource
 {
     protected static ?string $model = HondaIdVerification::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-identification';
     protected static ?string $navigationLabel = 'Honda ID Whitelist';
     protected static ?string $navigationGroup = 'Master Data';
@@ -25,26 +29,15 @@ class HondaIdVerificationResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Informasi Honda ID')
-                    ->description('Masukkan data Honda ID yang diizinkan untuk mendaftar.')
+                Forms\Components\Section::make('Informasi Utama')
                     ->schema([
                         Forms\Components\TextInput::make('honda_id')
                             ->label('Honda ID')
                             ->required()
-                            ->maxLength(255)
                             ->unique(ignoreRecord: true),
                             
-                        // CUMAN NAMBAHIN INI
                         Forms\Components\TextInput::make('name')
-                            ->label('Nama Lengkap')
-                            ->maxLength(255),
-                            
-                        Forms\Components\Select::make('position_id')
-                            ->label('Jabatan')
-                            ->relationship('position', 'name')
-                            ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->name} ({$record->group})")
-                            ->searchable(['name', 'group'])
-                            ->preload(),
+                            ->label('Nama Lengkap'),
                             
                         Forms\Components\Select::make('main_dealer_id')
                             ->label('Main Dealer')
@@ -68,16 +61,45 @@ class HondaIdVerificationResource extends Resource
                             ->disabled(fn (Get $get): bool => ! filled($get('main_dealer_id'))),
                     ])->columns(2),
 
-                Forms\Components\Section::make('Status')
+                Forms\Components\Section::make('Detail Pekerjaan')
+                    ->schema([
+                        Forms\Components\Select::make('division_id')
+                            ->label('Divisi')
+                            ->options(Division::query()->pluck('name', 'id'))
+                            ->live()
+                            ->dehydrated(false)
+                            ->searchable()
+                            ->preload()
+                            ->afterStateUpdated(fn (Set $set) => $set('position_id', null))
+                            ->afterStateHydrated(function (Set $set, ?Model $record) {
+                                if ($record && $record->position) {
+                                    $set('division_id', $record->position->division_id);
+                                }
+                            }),
+
+                        Forms\Components\Select::make('position_id')
+                            ->label('Jabatan')
+                            ->relationship('position', 'name', modifyQueryUsing: function (Builder $query, Get $get) {
+                                $divisionId = $get('division_id');
+                                if ($divisionId) {
+                                    return $query->where('division_id', $divisionId)->where('user_type', 'dealer');
+                                }
+                                return $query->where('id', 0);
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->disabled(fn (Get $get) => empty($get('division_id'))),
+                    ])->columns(2),
+
+                Forms\Components\Section::make('Status & Akun')
                     ->schema([
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
-                            ->helperText('Jika dimatikan, Honda ID ini tidak bisa digunakan untuk mendaftar.')
                             ->default(true),
 
                         Forms\Components\Toggle::make('has_account')
                             ->label('Sudah Punya Akun?')
-                            ->helperText('Otomatis dicentang oleh sistem jika user sudah berhasil mendaftar.')
                             ->disabled()
                             ->dehydrated(false),
                     ])->columns(2),
@@ -89,22 +111,28 @@ class HondaIdVerificationResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('honda_id')
-                    ->label('Honda ID')
+                    ->label('ID')
                     ->searchable()
                     ->sortable()
                     ->copyable()
-                    ->copyMessage('Honda ID berhasil disalin')
-                    ->copyMessageDuration(1500),
+                    ->weight('bold'),
                     
-                // CUMAN NAMBAHIN INI
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Lengkap')
+                    ->label('Nama')
                     ->searchable()
                     ->sortable(),
-                    
+
+                Tables\Columns\TextColumn::make('position.division.name')
+                    ->label('Divisi')
+                    ->badge()
+                    ->color('info')
+                    ->searchable()
+                    ->sortable(),
+
                 Tables\Columns\TextColumn::make('position.name')
                     ->label('Jabatan')
-                    ->formatStateUsing(fn ($state, $record) => $state ? "{$state} ({$record->position->group})" : '-')
+                    ->badge()
+                    ->color('gray')
                     ->searchable()
                     ->sortable(),
 
@@ -123,33 +151,48 @@ class HondaIdVerificationResource extends Resource
                     ->toggleable(),
 
                 Tables\Columns\IconColumn::make('is_active')
-                    ->label('Aktif?')
+                    ->label('Aktif')
                     ->boolean()
                     ->sortable(),
 
                 Tables\Columns\IconColumn::make('has_account')
-                    ->label('Sudah Daftar?')
+                    ->label('Daftar')
                     ->boolean()
                     ->sortable(),
-
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Tables\Filters\TernaryFilter::make('has_account')
-                    ->label('Status Pendaftaran')
-                    ->placeholder('Semua')
-                    ->trueLabel('Sudah Daftar')
-                    ->falseLabel('Belum Daftar'),
-
+                // FILTER STATUS AKTIF
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Status Aktif')
-                    ->placeholder('Semua')
-                    ->trueLabel('Aktif')
-                    ->falseLabel('Tidak Aktif'),
+                    ->placeholder('Semua Status')
+                    ->trueLabel('Hanya Aktif')
+                    ->falseLabel('Hanya Tidak Aktif'),
+
+                Tables\Filters\SelectFilter::make('division')
+                    ->label('Filter Divisi')
+                    ->relationship('position.division', 'name')
+                    ->searchable()
+                    ->preload(),
+
+                Tables\Filters\TernaryFilter::make('has_account')->label('Status Pendaftaran'),
+
+                // Filter Main Dealer (agar sinkron dengan URL dari Widget)
+                Tables\Filters\SelectFilter::make('main_dealer_id')
+                    ->label('Filter Main Dealer')
+                    ->options(MainDealer::pluck('name', 'id'))
+                    ->searchable(),
+
+                // Filter Dealer (agar sinkron dengan URL dari Widget)
+                Tables\Filters\SelectFilter::make('dealer_id')
+                    ->label('Filter Dealer')
+                    ->options(Dealer::pluck('name', 'id'))
+                    ->searchable(),
+
+                // Filter Position/Jabatan (agar sinkron dengan URL dari Widget)
+                Tables\Filters\SelectFilter::make('position_id')
+                    ->label('Filter Jabatan')
+                    ->options(Position::pluck('name', 'id'))
+                    ->searchable(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -160,11 +203,6 @@ class HondaIdVerificationResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [];
     }
 
     public static function getPages(): array

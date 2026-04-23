@@ -19,7 +19,7 @@ class PositionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-briefcase';
     protected static ?string $navigationGroup = 'Master Data';
-    protected static ?int $navigationSort = 12;
+    protected static ?int $navigationSort = 14;
 
     protected static ?string $navigationLabel = 'Jabatan';
     protected static ?string $modelLabel = 'Jabatan';
@@ -42,7 +42,7 @@ class PositionResource extends Resource
                                     ])
                                     ->required()
                                     ->native(false)
-                                    ->live(), // Tambahkan live agar perubahan tipe langsung terbaca oleh validasi divisi
+                                    ->live(),
 
                                 Forms\Components\TextInput::make('name')
                                     ->label('Nama Jabatan')
@@ -54,28 +54,24 @@ class PositionResource extends Resource
 
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\Select::make('divisi')
+                                // PERBAIKAN: Menggunakan Relasi ke Tabel Divisions
+                                Forms\Components\Select::make('division_id')
                                     ->label('Divisi')
-                                    ->options([
-                                        'Marketing Planning and Analysis' => 'Marketing Planning and Analysis',
-                                        'H1 - Sales' => 'H1 - Sales',
-                                        'H2 - TSD' => 'H2 - TSD',
-                                        'H3 - Parts' => 'H3 - Parts',
-                                        'HC3' => 'HC3',
-                                        'Logistic' => 'Logistic',
-                                    ])
+                                    ->relationship('division', 'name') // Mengambil data dari tabel divisions
                                     ->searchable()
-                                    ->native(false)
+                                    ->preload()
                                     ->required()
-                                    // UPDATE LOGIKA: Cek keunikan berdasarkan Nama + Tipe User + Divisi
+                                    ->native(false)
+                                    // UPDATE LOGIKA: Cek keunikan berdasarkan Nama + Tipe User + division_id
                                     ->unique(ignoreRecord: true, modifyRuleUsing: function (Unique $rule, Get $get) {
                                         return $rule->where('name', $get('name'))
-                                                    ->where('user_type', $get('user_type'));
+                                                    ->where('user_type', $get('user_type'))
+                                                    ->where('division_id', $get('division_id'));
                                     })
                                     ->validationMessages([
                                         'unique' => 'Jabatan ini sudah terdaftar untuk tipe user dan divisi tersebut.',
                                     ])
-                                    ->placeholder('Pilih Divisi'),
+                                    ->placeholder('Pilih Divisi Master'),
 
                                 Forms\Components\TextInput::make('level')
                                     ->label('Level')
@@ -113,8 +109,11 @@ class PositionResource extends Resource
                     })
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('divisi')
-                    ->label('Divisi')
+                // PERBAIKAN: Menampilkan Nama Divisi dari Relasi
+                Tables\Columns\TextColumn::make('division.name')
+                    ->label('Divisi Master')
+                    ->badge()
+                    ->color('info')
                     ->searchable()
                     ->sortable(),
 
@@ -124,7 +123,7 @@ class PositionResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('created_at')
-                    ->dateTime()
+                    ->dateTime('d/m/Y H:i')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
@@ -137,16 +136,12 @@ class PositionResource extends Resource
                     ])
                     ->label('Filter Peruntukan'),
 
-                Tables\Filters\SelectFilter::make('divisi')
-                    ->options([
-                        'Marketing Planning and Analysis' => 'Marketing Planning and Analysis',
-                        'H1 - Sales' => 'H1 - Sales',
-                        'H2 - TSD' => 'H2 - TSD',
-                        'H3 - Parts' => 'H3 - Parts',
-                        'HC3' => 'HC3',
-                        'Logistic' => 'Logistic',
-                    ])
-                    ->label('Filter Divisi'),
+                // PERBAIKAN: Filter Divisi sekarang dinamis dari Database
+                Tables\Filters\SelectFilter::make('division_id')
+                    ->label('Filter Divisi')
+                    ->relationship('division', 'name')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -166,6 +161,7 @@ class PositionResource extends Resource
 
     public static function canViewAny(): bool
     {
+        // Tetap menggunakan gate super_admin seperti request kamu sebelumnya
         return auth()->check() && auth()->user()->hasRole('super_admin');
     }
 

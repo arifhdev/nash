@@ -15,11 +15,10 @@ class HondaIdStagingResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
     protected static ?string $navigationLabel = 'Monitor Honda ID Temp';
     protected static ?string $navigationGroup = 'System';
-    protected static ?int $navigationSort = 100;
+    protected static ?int $navigationSort = 104;
 
     public static function canCreate(): bool { return false; }
     public static function canEdit(Model $record): bool { return false; }
-    public static function canDelete(Model $record): bool { return false; }
 
     public static function table(Table $table): Table
     {
@@ -29,34 +28,46 @@ class HondaIdStagingResource extends Resource
                     ->label('Honda ID')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Lengkap')
+                    ->label('Nama (Excel)')
                     ->searchable()
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('divisi')
+                    ->label('Kode Divisi (Excel)')
+                    ->badge()
+                    ->color('info')
+                    ->placeholder('Kosong'),
+
+                Tables\Columns\TextColumn::make('jabatan')
+                    ->label('Jabatan (Excel)')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('Kosong'),
+
                 Tables\Columns\TextColumn::make('md_code')
                     ->label('MD Code')
-                    ->searchable(),
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('dealer_code')
                     ->label('Dealer Code')
-                    ->searchable(),
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('jabatan')
-                    ->label('Jabatan')
-                    ->searchable(),
-
-                Tables\Columns\TextColumn::make('group')
-                    ->label('Group')
-                    ->searchable(),
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('Waktu Import')
+                    ->dateTime('d M Y, H:i:s')
+                    ->sortable(),
             ])
-            // defaultSort diubah dari created_at ke honda_id karena tabel ini tidak punya timestamps
-            ->defaultSort('honda_id', 'desc')
-            ->poll('5s')
-            ->actions([])
-            ->bulkActions([]);
+            ->defaultSort('created_at', 'desc')
+            ->poll('3s') // Tetap dipantau per 3 detik untuk 90rb data
+            ->actions([
+                Tables\Actions\DeleteAction::make(),
+            ]);
     }
 
     public static function getPages(): array
